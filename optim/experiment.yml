@@ -24,7 +24,7 @@ parameters:
   type: int
 - name: learning_rate
   bounds:
-    min: 0.0001
+    min: 0.001
     max: 0.1
   type: double
 - name: weight_decay
@@ -62,5 +62,5 @@ parameters:
     min: 0.1
     max: 100
   type: double
-budget: 500
+budget: 100
 parallel_bandwidth: 20
