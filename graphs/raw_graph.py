@@ -90,10 +90,36 @@ class RawGraph:
         return slices
 
     def set_node_types(self, bifurcation_id):
-        bid = self.project(bifurcation_id)
+        def fix_singular_points(slices, value0):
+            for i in range(len(slices)):
+                curslice = np.squeeze(slices[i])
 
+                # find consecutive chunks
+                idxs = np.where(curslice != value0)[0]
+
+                i1 = [idxs[0]]
+                i2 = []
+                for j in range(len(idxs)-2):
+                    if idxs[j] + 1 != idxs[j+1]:
+                        i2.append(idxs[j])
+                        i1.append(idxs[j+1])
+
+                i2.append(idxs[len(idxs)-1])
+
+                # set chunk to most common value
+                for chunki in range(len(i1)):
+                    cv = np.bincount(curslice[i1[chunki]:i2[chunki]+1]).argmax()
+                    slices[i][i1[chunki]:i2[chunki]+1] = cv
+
+
+        bid = self.project(bifurcation_id)
         for i in range(len(bid)):
             bid[i] = np.round(bid[i]).astype(int)
+        fix_singular_points(bid, -1)
+        self.bifurcation_id = self.project(bifurcation_id)
+        for i in range(len(bid)):
+            self.bifurcation_id[i] = np.round(self.bifurcation_id[i]).astype(int)
+        fix_singular_points(self.bifurcation_id, -1)
 
         allids = set()
         for ids in bid:
@@ -117,27 +143,27 @@ class RawGraph:
                 idxs = np.where(bid[i] == id)[0]
                 bid[i][idxs] = degrees[id]
 
-        # fix singular points
-        for i in range(len(bid)):
-            curbid = np.squeeze(bid[i])
-
-            # find consecutive chunks
-            idxs = np.where(curbid != 0)[0]
-
-
-            i1 = [idxs[0]]
-            i2 = []
-            for j in range(len(idxs)-2):
-                if idxs[j] + 1 != idxs[j+1]:
-                    i2.append(idxs[j])
-                    i1.append(idxs[j+1])
-
-            i2.append(idxs[len(idxs)-1])
-
-            # set chunk to most common value
-            for chunki in range(len(i1)):
-                cv = np.bincount(curbid[i1[chunki]:i2[chunki]+1]).argmax()
-                bid[i][i1[chunki]:i2[chunki]+1] = cv
+        # # fix singular points
+        # for i in range(len(bid)):
+        #     curbid = np.squeeze(bid[i])
+        #
+        #     # find consecutive chunks
+        #     idxs = np.where(curbid != 0)[0]
+        #
+        #
+        #     i1 = [idxs[0]]
+        #     i2 = []
+        #     for j in range(len(idxs)-2):
+        #         if idxs[j] + 1 != idxs[j+1]:
+        #             i2.append(idxs[j])
+        #             i1.append(idxs[j+1])
+        #
+        #     i2.append(idxs[len(idxs)-1])
+        #
+        #     # set chunk to most common value
+        #     for chunki in range(len(i1)):
+        #         cv = np.bincount(curbid[i1[chunki]:i2[chunki]+1]).argmax()
+        #         bid[i][i1[chunki]:i2[chunki]+1] = cv
 
         self.nodes_type = bid
 
@@ -328,9 +354,10 @@ class RawGraph:
         outlet_indices = [a - 1 for a in offsets[1:]]
 
         nodes_type = self.stack(self.nodes_type)
+        bifurcation_id = self.stack(self.bifurcation_id)
         tangents = self.stack(self.tangents)
 
-        return nodes, edges, inlet_index, outlet_indices, nodes_type, tangents
+        return nodes, edges, inlet_index, outlet_indices, nodes_type, tangents, bifurcation_id
 
     def create_heterogeneous_graph(self):
         # Dijkstra's algorithm
@@ -369,7 +396,8 @@ class RawGraph:
             return dists, prevs
 
         nodes, edges, inlet_index, \
-        outlet_indices, nodes_type, tangents = self.create_homogeneous_graph()
+        outlet_indices, nodes_type, tangents, \
+        bifurcation_id = self.create_homogeneous_graph()
 
         nnodes = nodes.shape[0]
         nninner_nodes = nnodes - len([inlet_index] + outlet_indices)
@@ -475,11 +503,78 @@ class RawGraph:
                       'mask': inner_mask, 'node_type': inner_node_types,
                       'tangent': inner_tangents}
 
-        return inner_dict, inlet_dict, outlet_dict
+        # let's find macro nodes and connectivity
+        macro_nodes = np.ones(inner_node_types.shape) * (-1)
+        inner_bif_id = np.delete(bifurcation_id, [inlet_index] + outlet_indices,
+                                 axis = 0)
+        allindices = np.arange(0, nodes.shape[0], 1)
+        allindices = np.delete(allindices, [inlet_index] + outlet_indices, axis = 0)
+
+        count_macro = 0
+        in_0_portion = False
+        for i in range(inner_node_types.shape[0]):
+            if inner_node_types[i] == 0:
+                macro_nodes[i] = count_macro
+                in_0_portion = True
+            else:
+                if in_0_portion:
+                    in_0_portion = False
+                    count_macro = count_macro + 1
+
+        # find junctions and inflows - outflows
+        bifs_ids = set()
+        for i in range(inner_bif_id.shape[0]):
+            if inner_bif_id[i] != -1:
+                bifs_ids.add(int(inner_bif_id[i]))
+
+
+        inflows = []
+        outflows = []
+        for bif_id in bifs_ids:
+            curinflows = []
+            curoutflows = []
+            for i in range(inner_bif_id.shape[0]):
+                if inner_bif_id[i] == bif_id:
+                    if i == 0:
+                        raise ValueError('First node is a junction!')
+                    if (i + 1) == inner_bif_id.shape[0]:
+                        raise ValueError('Last node is a junction!')
+                    if inner_bif_id[i-1] != bif_id and allindices[i-1] + 1 not in outlet_indices:
+                        curinflows.append(i-1)
+                    if inner_bif_id[i+1] != bif_id and allindices[i+1] not in outlet_indices:
+                        curoutflows.append(i+1)
+            inflows.append(curinflows)
+            outflows.append(curoutflows)
+
+        inner_to_macro = []
+        for i in range(macro_nodes.shape[0]):
+            if macro_nodes[i] != -1:
+                inner_to_macro.append([i, int(macro_nodes[i])])
+
+        macro_to_junction = []
+        for bif_id in range(len(inflows)):
+            for infl in inflows[bif_id]:
+                macro_to_junction.append([int(macro_nodes[infl]), bif_id])
+
+        junction_to_macro = []
+        for bif_id in range(len(inflows)):
+            for outfl in outflows[bif_id]:
+                junction_to_macro.append([bif_id, int(macro_nodes[outfl])])
+
+
+        inner_to_macro = np.array(inner_to_macro)
+        macro_to_junction = np.array(macro_to_junction)
+        junction_to_macro = np.array(junction_to_macro)
+
+        macro_structure = {'inner_to_macro': inner_to_macro,
+                           'macro_to_junction': macro_to_junction,
+                           'junction_to_macro': junction_to_macro}
+
+        return inner_dict, inlet_dict, outlet_dict, macro_structure
 
     def show(self):
         fig = plt.figure()
-        ax = ax = plt.axes(projection='3d')
+        ax = plt.axes(projection='3d')
 
         for i in range(len(self.portions)):
             portion = self.resampled_portions[i]

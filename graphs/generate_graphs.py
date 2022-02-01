@@ -24,7 +24,7 @@ from raw_graph import RawGraph
 DTYPE = np.float32
 
 def create_fixed_graph(raw_graph, area):
-    inner_dict, inlet_dict, outlet_dict = raw_graph.create_heterogeneous_graph()
+    inner_dict, inlet_dict, outlet_dict, macro_dict = raw_graph.create_heterogeneous_graph()
 
     graph_data = {('inner', 'inner_to_inner', 'inner'): \
                   (inner_dict['edges'][:,0], inner_dict['edges'][:,1]),
@@ -33,7 +33,16 @@ def create_fixed_graph(raw_graph, area):
                   ('outlet', 'out_to_inner', 'inner'): \
                   (outlet_dict['edges'][:,0],outlet_dict['edges'][:,1]), \
                   ('params', 'dummy', 'params'): \
-                  (np.array([0]), np.array([0]))}
+                  (np.array([0]), np.array([0])), \
+                  ('inner', 'inner_to_macro', 'macro'): \
+                  (macro_dict['inner_to_macro'][:,0],
+                   macro_dict['inner_to_macro'][:,1]),
+                  ('macro', 'macro_to_junction', 'junction'): \
+                  (macro_dict['macro_to_junction'][:,0],
+                   macro_dict['macro_to_junction'][:,1]),
+                  ('junction', 'junction_to_macro', 'macro'): \
+                  (macro_dict['junction_to_macro'][:,0],
+                   macro_dict['junction_to_macro'][:,1])}
 
     graph = dgl.heterograph(graph_data)
 
