@@ -551,24 +551,26 @@ class RawGraph:
             if macro_nodes[i] != -1:
                 inner_to_macro.append([i, int(macro_nodes[i])])
 
-        macro_to_junction = []
+        macro_to_junction_positive = []
         for bif_id in range(len(inflows)):
             for infl in inflows[bif_id]:
-                macro_to_junction.append([int(macro_nodes[infl]), bif_id])
+                macro_to_junction_positive.append([int(macro_nodes[infl]), bif_id])
 
-        junction_to_macro = []
+        macro_to_junction_negative = []
         for bif_id in range(len(inflows)):
             for outfl in outflows[bif_id]:
-                junction_to_macro.append([bif_id, int(macro_nodes[outfl])])
+                macro_to_junction_negative.append([int(macro_nodes[outfl]), bif_id])
 
 
         inner_to_macro = np.array(inner_to_macro)
-        macro_to_junction = np.array(macro_to_junction)
-        junction_to_macro = np.array(junction_to_macro)
+        macro_to_inner = np.array([inner_to_macro[:,1], inner_to_macro[:,0]]).transpose()
+        macro_to_junction_positive = np.array(macro_to_junction_positive)
+        macro_to_junction_negative = np.array(macro_to_junction_negative)
 
         macro_structure = {'inner_to_macro': inner_to_macro,
-                           'macro_to_junction': macro_to_junction,
-                           'junction_to_macro': junction_to_macro}
+                           'macro_to_inner': macro_to_inner,
+                           'macro_to_junction_positive': macro_to_junction_positive,
+                           'macro_to_junction_negative': macro_to_junction_negative}
 
         return inner_dict, inlet_dict, outlet_dict, macro_structure
 

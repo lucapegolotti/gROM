@@ -82,6 +82,10 @@ class GraphNet(Module):
                           params['out_size'],
                           params['hl_mlp'],
                           False)
+        pressure_selector = np.array([[1],[0]]).astype(np.float32)
+        flowrate_selector = np.array([[0],[1]]).astype(np.float32)
+        self.pressure_selector = torch.tensor(pressure_selector)
+        self.flowrate_selector = torch.tensor(flowrate_selector)
 
         # self.dropout = Dropout(0.5)
 
@@ -136,6 +140,26 @@ class GraphNet(Module):
         h = self.output(f)
         return {'h' : h}
 
+    def compute_continuity_loss(self, g, pred):
+        g.nodes['inner'].data['h'][:,1] = pred[:,1]
+        # this is kind of useless because pred should already be averaged
+        g.update_all(fn.copy_src('h', 'm'), fn.mean('m', 'average'),
+                     etype='inner_to_macro')
+        g.nodes['macro'].data['average'] = g.nodes['macro'].data['average'][:,1]
+        g.update_all(fn.copy_src('average', 'm'), fn.mean('m', 'positve_flow'),
+                     etype='macro_to_junction_positive')
+        g.update_all(fn.copy_src('average', 'm'), fn.mean('m', 'negative_flow'),
+                     etype='macro_to_junction_negative')
+        diff = g.nodes['junction'].data['positve_flow'] - \
+               g.nodes['junction'].data['negative_flow']
+
+        return torch.sum(torch.abs(diff))
+
+    def compute_flowrate_correction(self, edges):
+        f1 = edges.src['average_q']
+        f2 = edges.dst['pred_q']
+        return {'correction': f1 - f2}
+
     def forward(self, g, in_feat):
         g.nodes['inner'].data['features_c'] = in_feat
         g.apply_nodes(self.encode_nodes, ntype='inner')
@@ -158,5 +182,18 @@ class GraphNet(Module):
             g.update_all(fn.copy_e('proc_edge', 'm'), fn.sum('m', 'pe_sum'),
                                    etype='inner_to_inner')
             g.apply_nodes(pn, ntype='inner')
+
         g.apply_nodes(self.decode, ntype='inner')
-        return g.nodes['inner'].data['h']
+        # adjust flowrate to be constant in portions without branches
+        g.nodes['inner'].data['pred_p'] = torch.matmul(g.nodes['inner'].data['h'],
+                                          self.pressure_selector)
+        g.nodes['inner'].data['pred_q'] = torch.matmul(g.nodes['inner'].data['h'],
+                                          self.flowrate_selector)
+        g.update_all(fn.copy_src('pred_q', 'm'), fn.mean('m', 'average_q'),
+                     etype='inner_to_macro')
+        g.apply_edges(self.compute_flowrate_correction,
+                      etype='macro_to_inner')
+        g.update_all(fn.copy_e('correction', 'm'), fn.mean('m', 'correction'),
+                     etype='macro_to_inner')
+        return torch.cat((g.nodes['inner'].data['pred_p'],
+                          g.nodes['inner'].data['pred_q']), dim=1)

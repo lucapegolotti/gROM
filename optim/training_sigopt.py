@@ -33,7 +33,8 @@ if __name__ == "__main__":
         random_walks=0,
         normalization='standard',
         optimizer='adam',
-        label_normalization='min_max'
+        label_normalization='min_max',
+        continuity_coeff=10
     )
     network_params = {'infeat_nodes': 12,
                     'infeat_edges': 4,
@@ -47,7 +48,8 @@ if __name__ == "__main__":
                     'weight_decay': sigopt.params.weight_decay,
                     'momentum': sigopt.params.momentum,
                     'nepochs': sigopt.params.nepochs,
-                    'batch_size': sigopt.params.batch_size}
+                    'batch_size': sigopt.params.batch_size,
+                    'continuity_coeff': sigopt.params.continuity_coeff}
     dataset_params = {'normalization': sigopt.params.normalization,
                       'rate_noise': sigopt.params.rate_noise,
                       'label_normalization': sigopt.params.label_normalization}
@@ -70,7 +72,7 @@ if __name__ == "__main__":
     err_p, err_q, global_err = test.test_rollout(gnn_model, parameters,
                                                  dataset,
                                                  index_graph = 0,
-                                                 do_plot = True,
+                                                 split = 'validation',
                                                  out_folder = out_fdr)
 
     sigopt.log_metadata('folder', out_fdr)

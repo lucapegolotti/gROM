@@ -37,12 +37,15 @@ def create_fixed_graph(raw_graph, area):
                   ('inner', 'inner_to_macro', 'macro'): \
                   (macro_dict['inner_to_macro'][:,0],
                    macro_dict['inner_to_macro'][:,1]),
-                  ('macro', 'macro_to_junction', 'junction'): \
-                  (macro_dict['macro_to_junction'][:,0],
-                   macro_dict['macro_to_junction'][:,1]),
-                  ('junction', 'junction_to_macro', 'macro'): \
-                  (macro_dict['junction_to_macro'][:,0],
-                   macro_dict['junction_to_macro'][:,1])}
+                  ('macro', 'macro_to_inner', 'inner'): \
+                  (macro_dict['macro_to_inner'][:,0],
+                   macro_dict['macro_to_inner'][:,1]),
+                  ('macro', 'macro_to_junction_positive', 'junction'): \
+                  (macro_dict['macro_to_junction_positive'][:,0],
+                   macro_dict['macro_to_junction_positive'][:,1]),
+                  ('macro', 'macro_to_junction_negative', 'junction'): \
+                  (macro_dict['macro_to_junction_negative'][:,0],
+                   macro_dict['macro_to_junction_negative'][:,1])}
 
     graph = dgl.heterograph(graph_data)
 

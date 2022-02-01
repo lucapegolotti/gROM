@@ -30,7 +30,7 @@ def mae(input, target, weight = None):
 def generate_gnn_model(params_dict):
     return GraphNet(params_dict)
 
-def evaluate_model(gnn_model, train_dataloader, loss, metric = None, optimizer = None):
+def evaluate_model(gnn_model, train_dataloader, loss, metric = None, optimizer = None, continuity_coeff = 0.0):
     global_loss = 0
     global_metric = 0
     count = 0
@@ -39,8 +39,13 @@ def evaluate_model(gnn_model, train_dataloader, loss, metric = None, optimizer =
         pred = gnn_model(batched_graph,
                          batched_graph.nodes['inner'].data['n_features'].float()).squeeze()
 
-        loss_v = loss(pred, torch.reshape(batched_graph.nodes['inner'].data['n_labels'].float(),
-                      pred.shape))
+        if continuity_coeff > 1e-12:
+            c_loss = gnn_model.compute_continuity_loss(batched_graph, pred)
+            loss_v = loss(pred, torch.reshape(batched_graph.nodes['inner'].data['n_labels'].float(),
+                          pred.shape)) + c_loss * continuity_coeff
+        else:
+            loss_v = loss(pred, torch.reshape(batched_graph.nodes['inner'].data['n_labels'].float(),
+                          pred.shape))
 
         global_loss = global_loss + loss_v.detach().numpy()
 
@@ -123,7 +128,9 @@ def train_gnn_model(gnn_model, train, validation, optimizer_name, train_params,
 
 
     for epoch in range(nepochs):
-        global_loss, count, elapsed, global_mae = evaluate_model(gnn_model, train_dataloader, mse, weighted_mae, optimizer)
+        global_loss, count, elapsed, global_mae = evaluate_model(gnn_model, train_dataloader,
+                                                                 mse, weighted_mae, optimizer,
+                                                                 continuity_coeff = train_params['continuity_coeff'])
         scheduler.step()
         print('{:.0f}\tloss = {:.4e} mae = {:.4e} time = {:.2f} s'.format(epoch,
                                                                       global_loss/count,
@@ -223,8 +230,9 @@ if __name__ == "__main__":
     train_params = {'learning_rate': 0.008223127794360673,
                     'weight_decay': 0.36984122162067234,
                     'momentum': 0.0,
-                    'batch_size': 359,
-                    'nepochs': 1}
+                    'batch_size': 350,
+                    'nepochs': 10,
+                    'continuity_coeff': 10}
     dataset_params = {'normalization': 'standard',
                       'rate_noise': 0.006,
                       'label_normalization': 'min_max'}
