@@ -35,6 +35,7 @@ def evaluate_model(gnn_model, train_dataloader, loss, metric = None, optimizer =
     global_metric = 0
     count = 0
     start = time.time()
+    c_loss_global = 0
     for batched_graph in train_dataloader:
         pred = gnn_model(batched_graph,
                          batched_graph.nodes['inner'].data['n_features'].float()).squeeze()
@@ -43,6 +44,7 @@ def evaluate_model(gnn_model, train_dataloader, loss, metric = None, optimizer =
             c_loss = gnn_model.compute_continuity_loss(batched_graph, pred)
             loss_v = loss(pred, torch.reshape(batched_graph.nodes['inner'].data['n_labels'].float(),
                           pred.shape)) + c_loss * continuity_coeff
+            c_loss_global = c_loss_global + c_loss.detach().numpy()
         else:
             loss_v = loss(pred, torch.reshape(batched_graph.nodes['inner'].data['n_labels'].float(),
                           pred.shape))
@@ -63,7 +65,7 @@ def evaluate_model(gnn_model, train_dataloader, loss, metric = None, optimizer =
 
     end = time.time()
 
-    return global_loss, count, end - start, global_metric
+    return global_loss, count, end - start, global_metric, c_loss_global
 
 def train_gnn_model(gnn_model, train, validation, optimizer_name, train_params,
                     checkpoint_fct = None, dataset_params = None):
@@ -128,14 +130,15 @@ def train_gnn_model(gnn_model, train, validation, optimizer_name, train_params,
 
 
     for epoch in range(nepochs):
-        global_loss, count, elapsed, global_mae = evaluate_model(gnn_model, train_dataloader,
-                                                                 mse, weighted_mae, optimizer,
-                                                                 continuity_coeff = train_params['continuity_coeff'])
+        global_loss, count, elapsed, global_mae, c_loss = evaluate_model(gnn_model, train_dataloader,
+                                                                         mse, weighted_mae, optimizer,
+                                                                         continuity_coeff = train_params['continuity_coeff'])
         scheduler.step()
-        print('{:.0f}\tloss = {:.4e} mae = {:.4e} time = {:.2f} s'.format(epoch,
-                                                                      global_loss/count,
-                                                                      global_mae/count,
-                                                                      elapsed))
+        print('{:.0f}\tloss = {:.4e} mae = {:.4e} continuity_loss = {:.4e} time = {:.2f} s'.format(epoch,
+                                                                                           global_loss/count,
+                                                                                           global_mae/count,
+                                                                                           c_loss/count,
+                                                                                           elapsed))
 
         if checkpoint_fct != None:
             if epoch in chckp_epochs:
@@ -145,7 +148,7 @@ def train_gnn_model(gnn_model, train, validation, optimizer_name, train_params,
             train_dataset.sample_noise(dataset_params['rate_noise'])
 
     # compute final loss
-    global_loss, count, _, global_mae = evaluate_model(gnn_model, train_dataloader, mse, weighted_mae)
+    global_loss, count, _, global_mae, _ = evaluate_model(gnn_model, train_dataloader, mse, weighted_mae)
     print('\tFinal loss = {:.2e}\tfinal mae = {:.2e}'.format(global_loss/count,
                                                              global_mae/count))
 
