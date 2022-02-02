@@ -30,7 +30,8 @@ def mae(input, target, weight = None):
 def generate_gnn_model(params_dict):
     return GraphNet(params_dict)
 
-def evaluate_model(gnn_model, train_dataloader, loss, metric = None, optimizer = None, continuity_coeff = 0.0):
+def evaluate_model(gnn_model, train_dataloader, loss, metric = None,
+                   optimizer = None, continuity_coeff = 0.0):
     global_loss = 0
     global_metric = 0
     count = 0
