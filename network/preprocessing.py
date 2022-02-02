@@ -339,6 +339,11 @@ def invert_normalize_function(field, field_name, coefs_dict):
     return []
 
 def graph_statistics(graph, field):
+    def transform_scalar(value):
+        try:
+            return float(value)
+        except TypeError:
+            return value
     def per_node_type(node_type):
         N = 0
         sumv = 0
@@ -349,13 +354,13 @@ def graph_statistics(graph, field):
             if field in feat:
                 value = graph.nodes[node_type].data[feat].detach().numpy()
                 if minv is None:
-                    minv = np.min(value, axis = 0)
+                    minv = transform_scalar(np.min(value, axis = 0))
                 else:
-                    minv = np.min([minv,np.min(value,axis = 0)])
+                    minv = np.min([minv,transform_scalar(np.min(value,axis = 0))])
                 if maxv is None:
-                    maxv = np.max(value, axis = 0)
+                    maxv = transform_scalar(np.max(value, axis = 0))
                 else:
-                    maxv = np.max([maxv,np.max(value,axis = 0)])
+                    maxv = np.max([maxv,transform_scalar(np.max(value,axis = 0))])
                 N = N + value.shape[0]
                 sumv = sumv + np.sum(value, axis = 0)
         return minv, maxv, sumv, N
@@ -370,13 +375,13 @@ def graph_statistics(graph, field):
             if field in feat:
                 value = graph.edges[edge_type].data[feat].detach().numpy()
                 if minv is None:
-                    minv = np.min(value, axis = 0)
+                    minv = transform_scalar(np.min(value, axis = 0))
                 else:
-                    minv = np.min([minv,np.min(value,axis = 0)])
+                    minv = np.min([minv,transform_scalar(np.min(value,axis = 0))])
                 if maxv is None:
-                    maxv = np.max(value, axis = 0)
+                    maxv = transform_scalar(np.max(value, axis = 0))
                 else:
-                    maxv = np.max([maxv,np.max(value,axis = 0)])
+                    maxv = np.max([maxv,transform_scalar(np.max(value,axis = 0))])
                 N = N + value.shape[0]
                 sumv = sumv + np.sum(value, axis = 0)
         return  minv, maxv, sumv, N
@@ -386,7 +391,6 @@ def graph_statistics(graph, field):
     maxv = None
     node_types = ['inner', 'inlet', 'outlet']
     edge_types = ['inner_to_inner', 'in_to_inner', 'out_to_inner']
-
     for nt in node_types:
         cmin, cmax, csum, cN = per_node_type(nt)
         if minv is None:
