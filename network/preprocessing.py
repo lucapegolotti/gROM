@@ -338,57 +338,151 @@ def invert_normalize_function(field, field_name, coefs_dict):
         return invert_standardize(field, coefs_dict[field_name])
     return []
 
-def add_to_list(graph, field, partial_list):
-    def per_node_type(node_type, partial_list):
+def graph_statistics(graph, field):
+    def per_node_type(node_type):
+        N = 0
+        sumv = 0
+        minv = None
+        maxv = None
         node_features = graph.nodes[node_type].data
         for feat in node_features:
             if field in feat:
                 value = graph.nodes[node_type].data[feat].detach().numpy()
-                if (len(value.shape) == 1):
-                    value = np.expand_dims(value, axis = 1)
-                if partial_list.size == 0:
-                    partial_list = value
+                if minv is None:
+                    minv = np.min(value, axis = 0)
                 else:
-                    partial_list = np.concatenate((partial_list,value), axis = 0)
-        return partial_list
+                    minv = np.min([minv,np.min(value,axis = 0)])
+                if maxv is None:
+                    maxv = np.max(value, axis = 0)
+                else:
+                    maxv = np.max([maxv,np.max(value,axis = 0)])
+                N = N + value.shape[0]
+                sumv = sumv + np.sum(value, axis = 0)
+        return minv, maxv, sumv, N
 
-    def per_edge_type(edge_type, partial_list):
+    def per_edge_type(edge_type):
+        N = 0
+        sumv = 0
+        minv = None
+        maxv = None
         edge_features = graph.edges[edge_type].data
         for feat in edge_features:
             if field in feat:
                 value = graph.edges[edge_type].data[feat].detach().numpy()
-                if (len(value.shape) == 1):
-                    value = np.expand_dims(value, axis = 1)
-                if partial_list.size == 0:
-                    partial_list = value
+                if minv is None:
+                    minv = np.min(value, axis = 0)
                 else:
-                    partial_list = np.concatenate((partial_list, value), axis = 0)
-        return partial_list
+                    minv = np.min([minv,np.min(value,axis = 0)])
+                if maxv is None:
+                    maxv = np.max(value, axis = 0)
+                else:
+                    maxv = np.max([maxv,np.max(value,axis = 0)])
+                N = N + value.shape[0]
+                sumv = sumv + np.sum(value, axis = 0)
+        return  minv, maxv, sumv, N
+    N = 0
+    sumv = 0
+    minv = None
+    maxv = None
+    node_types = ['inner', 'inlet', 'outlet']
+    edge_types = ['inner_to_inner', 'in_to_inner', 'out_to_inner']
 
-    partial_list = per_node_type('inner', partial_list)
-    partial_list = per_node_type('inlet', partial_list)
-    partial_list = per_node_type('outlet', partial_list)
-    partial_list = per_edge_type('inner_to_inner', partial_list)
-    partial_list = per_edge_type('in_to_inner', partial_list)
-    partial_list = per_edge_type('out_to_inner', partial_list)
+    for nt in node_types:
+        cmin, cmax, csum, cN = per_node_type(nt)
+        if minv is None:
+            minv = cmin
+        elif cmin is not None:
+            minv = np.min([minv,cmin], axis = 0)
+        if maxv is None:
+            maxv = cmax
+        elif cmax is not None:
+            maxv = np.max([maxv,cmax], axis = 0)
+        sumv = sumv + csum
+        N = N + cN
 
-    return partial_list
+    for et in edge_types:
+        cmin, cmax, csum, cN = per_edge_type(et)
+        if minv is None:
+            minv = cmin
+        elif cmin is not None:
+            minv = np.min([minv,cmin], axis = 0)
+        if maxv is None:
+            maxv = cmax
+        elif cmax is not None:
+            maxv = np.max([maxv,cmax], axis = 0)
+        sumv = sumv + csum
+        N = N + cN
+
+    return minv, maxv, sumv, N
+
+def graph_squared_diff(graph, field, mean):
+    def per_node_type(node_type, mean):
+        sumv = 0
+        node_features = graph.nodes[node_type].data
+        for feat in node_features:
+            if field in feat:
+                value = graph.nodes[node_type].data[feat].detach().numpy()
+                sumv = sumv + np.sum((value - mean)**2, axis = 0)
+        return sumv
+
+    def per_edge_type(edge_type, mean):
+        sumv = 0
+        edge_features = graph.edges[edge_type].data
+        for feat in edge_features:
+            if field in feat:
+                value = graph.edges[edge_type].data[feat].detach().numpy()
+                sumv = sumv + np.sum((value - mean)**2, axis = 0)
+        return  sumv
+    sumv = 0
+    node_types = ['inner', 'inlet', 'outlet']
+    edge_types = ['inner_to_inner', 'in_to_inner', 'out_to_inner']
+
+    for nt in node_types:
+        csum = per_node_type(nt, mean)
+        sumv = sumv + csum
+
+    for et in edge_types:
+        csum = per_edge_type(et, mean)
+        sumv = sumv + csum
+
+    return sumv
 
 def compute_statistics(graphs, fields, coefs_dict):
     for field in fields:
-        cur_list = np.zeros((0,0))
+        # first we compute min, max and mean
+        N = 0
+        sumv = 0
+        minv = None
+        maxv = None
         for graph in graphs:
-            cur_list = add_to_list(graph, field, cur_list)
+            gmin, gmax, gsum, gN = graph_statistics(graph, field)
+            if minv is None:
+                minv = gmin
+            else:
+                minv = np.min([minv, gmin], axis = 0)
+            if maxv is None:
+                maxv = gmax
+            else:
+                maxv = np.max([maxv, gmax], axis = 0)
+            sumv = sumv + gsum
+            N = N + gN
 
-        coefs_dict[field] = {'min': np.min(cur_list, axis=0),
-                             'max': np.max(cur_list, axis=0),
-                             'mean': np.mean(cur_list, axis=0),
-                             'std': np.std(cur_list, axis=0)}
+        cmean = sumv / N
+        sumv = 0
 
-        ncoefs = coefs_dict[field]['std'].shape[0]
-        for i in range(ncoefs):
-            if coefs_dict[field]['std'][i] < 1e-12:
-                coefs_dict[field]['std'][i] = 1
+        # compute sum of diffs squared for std
+        for graph in graphs:
+            gdiff = graph_squared_diff(graph, field, cmean)
+            sumv = sumv + gdiff
+
+        # we use an unbiased estimator
+        cstdv = np.sqrt(1 / (N-1) * sumv)
+
+        coefs_dict[field] = {'min': minv,
+                             'max': maxv,
+                             'mean': cmean,
+                             'std': cstdv}
+
     return coefs_dict
 
 def normalize_graphs(graphs, fields, coefs_dict):

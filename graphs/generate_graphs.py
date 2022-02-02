@@ -119,7 +119,7 @@ def add_fields(graph, pressure, velocity):
     newgraph.nodes['params'].data['times'] = \
                         torch.from_numpy(np.expand_dims(np.array(times),axis=0))
 
-    graph.nodes['inner'].data['dt'] = graph.nodes['inner'].data['dt'] * (np.array(times[1] - times[0]))
+    newgraph.nodes['inner'].data['dt'] = graph.nodes['inner'].data['dt'] * (np.array(times[1] - times[0]))
 
     return newgraph
 

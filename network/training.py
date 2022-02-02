@@ -157,8 +157,11 @@ def train_gnn_model(gnn_model, train, validation, optimizer_name, train_params,
             if epoch in chckp_epochs:
                 checkpoint_fct(global_loss/count)
 
-        if epoch >= 6:
-            train_dataset.sample_noise(dataset_params['rate_noise'])
+        if epoch >= 10:
+            if epoch >= 20:
+                train_dataset.sample_noise(dataset_params['rate_noise'])
+            else:
+                train_dataset.sample_noise(dataset_params['rate_noise'] * (epoch - 10)/10)
 
     # compute final loss
     global_loss, count, _, global_mae, _ = evaluate_model(gnn_model, train_dataloader, mse, weighted_mae)
@@ -235,7 +238,7 @@ def launch_training(dataset_json, optimizer_name, params_dict,
         print(obj)
         raise TypeError('Not serializable')
 
-    if save_data == 0:
+    if save_data:
         with open(folder + '/parameters.json', 'w') as outfile:
             json.dump(parameters, outfile, default=default)
     return gnn_model, loss, mae, dataset, coefs_dict, folder, parameters
@@ -261,8 +264,8 @@ if __name__ == "__main__":
                     'weight_decay': 0.36984122162067234,
                     'momentum': 0.0,
                     'batch_size': 350,
-                    'nepochs': 10,
-                    'continuity_coeff': 10}
+                    'nepochs': 40,
+                    'continuity_coeff': 0.1}
     dataset_params = {'normalization': 'standard',
                       'rate_noise': 0.006,
                       'label_normalization': 'min_max'}
