@@ -7,6 +7,7 @@ import torch.nn.functional as F
 import dgl.function as fn
 from torch.nn import Dropout
 import numpy as np
+import preprocessing as pp
 
 class MLP(Module):
     def __init__(self, in_feats, latent_space, out_feats, n_h_layers, normalize = True):
@@ -140,17 +141,36 @@ class GraphNet(Module):
         h = self.output(f)
         return {'h' : h}
 
-    def compute_continuity_loss(self, g, pred):
-        g.nodes['inner'].data['h'][:,1] = pred[:,1]
+    def compute_continuity_loss(self, g, pred, label_coefs, coefs_dict):
+        g.nodes['inner'].data['pred_q'] = torch.matmul(pred,
+                                          self.flowrate_selector)
+
+        # we have to bring the flowrate into the original units to compute
+        # mass loss
+        if label_coefs['normalization_type'] == 'min_max':
+            g.nodes['inner'].data['pred_q'] = label_coefs['min'][1] + \
+                                               g.nodes['inner'].data['pred_q'] * \
+                                              (label_coefs['max'][1] - label_coefs['min'][1])
+        elif label_coefs['normalization_type'] == 'standard':
+            g.nodes['inner'].data['pred_q'] = label_coefs['mean'][1] + \
+                                               g.nodes['inner'].data['pred_q'] * \
+                                              label_coefs['std'][1]
+        if coefs_dict['type'] == 'min_max':
+            g.nodes['inner'].data['pred_q'] = g.nodes['inner'].data['pred_q'] * \
+                                              float(coefs_dict['flowrate']['max'] - coefs_dict['min']['flowrate'])
+        elif coefs_dict['type'] == 'standard':
+            g.nodes['inner'].data['pred_q'] = g.nodes['inner'].data['pred_q'] * \
+                                              float(coefs_dict['flowrate']['std'])
+
         # this is kind of useless because pred should already be averaged
-        g.update_all(fn.copy_src('h', 'm'), fn.mean('m', 'average'),
+        g.update_all(fn.copy_src('pred_q', 'm'), fn.mean('m', 'average'),
                      etype='inner_to_macro')
-        g.nodes['macro'].data['average'] = g.nodes['macro'].data['average'][:,1]
-        g.update_all(fn.copy_src('average', 'm'), fn.mean('m', 'positve_flow'),
+        g.update_all(fn.copy_src('average', 'm'), fn.sum('m', 'positive_flow'),
                      etype='macro_to_junction_positive')
-        g.update_all(fn.copy_src('average', 'm'), fn.mean('m', 'negative_flow'),
+        g.update_all(fn.copy_src('average', 'm'), fn.sum('m', 'negative_flow'),
                      etype='macro_to_junction_negative')
-        diff = g.nodes['junction'].data['positve_flow'] - \
+
+        diff = g.nodes['junction'].data['positive_flow'] - \
                g.nodes['junction'].data['negative_flow']
 
         return torch.sum(torch.abs(diff))
@@ -195,5 +215,7 @@ class GraphNet(Module):
                       etype='macro_to_inner')
         g.update_all(fn.copy_e('correction', 'm'), fn.mean('m', 'correction'),
                      etype='macro_to_inner')
+        g.nodes['inner'].data['pred_q'] = g.nodes['inner'].data['pred_q'] + \
+                                          g.nodes['inner'].data['correction']
         return torch.cat((g.nodes['inner'].data['pred_p'],
                           g.nodes['inner'].data['pred_q']), dim=1)

@@ -22,6 +22,7 @@ import time
 import json
 import pathlib
 
+
 def mse(input, target):
     return ((input - target) ** 2).mean()
 
@@ -35,6 +36,8 @@ def generate_gnn_model(params_dict):
 
 def evaluate_model(gnn_model, train_dataloader, loss, metric = None,
                    optimizer = None, continuity_coeff = 0.0):
+    label_coefs = train_dataloader.dataloader.dataset.label_coefs
+    coefs_dict = train_dataloader.dataloader.dataset.coefs_dict
     global_loss = 0
     global_metric = 0
     count = 0
@@ -45,7 +48,12 @@ def evaluate_model(gnn_model, train_dataloader, loss, metric = None,
                          batched_graph.nodes['inner'].data['n_features'].float()).squeeze()
 
         if continuity_coeff > 1e-12:
-            c_loss = gnn_model.compute_continuity_loss(batched_graph, pred)
+            # real = gnn_model.compute_continuity_loss(batched_graph, batched_graph.nodes['inner'].data['n_labels'], label_coefs, coefs_dict)
+            # print(real)
+            try:
+                c_loss = gnn_model.module.compute_continuity_loss(batched_graph, pred, label_coefs, coefs_dict)
+            except AttributeError:
+                c_loss = gnn_model.compute_continuity_loss(batched_graph, pred, label_coefs, coefs_dict)
             loss_v = loss(pred, torch.reshape(batched_graph.nodes['inner'].data['n_labels'].float(),
                           pred.shape)) + c_loss * continuity_coeff
             c_loss_global = c_loss_global + c_loss.detach().numpy()
@@ -74,8 +82,11 @@ def evaluate_model(gnn_model, train_dataloader, loss, metric = None,
 def train_gnn_model(gnn_model, train, validation, optimizer_name, train_params,
                     checkpoint_fct = None, dataset_params = None):
     # we only compute the coefs_dict on the train_dataset
-    train_dataset, coefs_dict = pp.generate_dataset(train, dataset_params = dataset_params)
-    validation_dataset, _ = pp.generate_dataset(validation, coefs_dict, dataset_params)
+    train_dataset = pp.generate_dataset(train, dataset_params = dataset_params)
+    coefs_dict = train_dataset.coefs_dict
+    print('Dataset contains {:.0f} graphs'.format(len(train_dataset)))
+
+    validation_dataset = pp.generate_dataset(validation, coefs_dict, dataset_params)
 
     if dataset_params['label_normalization'] == 'min_max':
         def weighted_mae(input, target):
@@ -263,8 +274,8 @@ if __name__ == "__main__":
     train_params = {'learning_rate': 0.008223127794360673,
                     'weight_decay': 0.36984122162067234,
                     'momentum': 0.0,
-                    'batch_size': 350,
-                    'nepochs': 40,
+                    'batch_size': 1,
+                    'nepochs': 1,
                     'continuity_coeff': 0.1}
     dataset_params = {'normalization': 'standard',
                       'rate_noise': 0.006,

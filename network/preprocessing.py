@@ -97,10 +97,11 @@ def set_bcs(graph, state_dict):
     per_node_type('outlet')
 
 class DGL_Dataset(DGLDataset):
-    def __init__(self, graphs = None, label_normalization = 'none'):
+    def __init__(self, graphs = None, label_normalization = 'none', coefs_dict = None):
         self.graphs = graphs
         self.set_times()
         self.label_normalization = label_normalization
+        self.coefs_dict = coefs_dict
         super().__init__(name='dgl_dataset')
 
     def set_times(self):
@@ -531,4 +532,4 @@ def generate_dataset(model_names, coefs_dict = None, dataset_params = None):
 
     graphs, coefs_dict = normalize(graphs, normalization_type, coefs_dict)
 
-    return DGL_Dataset(graphs, label_normalization), coefs_dict
+    return DGL_Dataset(graphs, label_normalization, coefs_dict)
