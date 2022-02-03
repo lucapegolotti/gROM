@@ -193,7 +193,10 @@ class DGL_Dataset(DGLDataset):
         set_state(self.lightgraphs[gindex], state_dict, next_state_dict, noise_dict, label_coefs)
 
     def __getitem__(self, i):
-        gindex, tindex =  self.i_to_graph_index(i.detach().numpy())
+        try:
+            gindex, tindex =  self.i_to_graph_index(i.detach().numpy())
+        except AttributeError:
+            gindex, tindex =  self.i_to_graph_index(i)
         self.prep_item(gindex, tindex, self.label_coefs)
         return self.lightgraphs[gindex]
 
