@@ -45,7 +45,7 @@ if __name__ == "__main__":
                     'process_iterations': sigopt.params.process_iterations,
                     'hl_mlp': sigopt.params.hl_mlp,
                     'normalize': sigopt.params.normalize,
-                    'average_flowrate:' sigopt.params.average_flowrate}
+                    'average_flowrate': sigopt.params.average_flowrate}
     train_params = {'learning_rate': sigopt.params.learning_rate,
                     'weight_decay': sigopt.params.weight_decay,
                     'momentum': sigopt.params.momentum,

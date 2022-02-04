@@ -19,8 +19,8 @@ parameters:
   type: int
 - name: latent_size_mlp
   bounds:
-    min: 80
-    max: 32
+    min: 32
+    max: 80
   type: int
 - name: learning_rate
   bounds:
