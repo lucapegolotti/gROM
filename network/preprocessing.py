@@ -296,7 +296,10 @@ def standardize(field, coeffs):
         coeffs['mean'] = np.asarray(coeffs['mean'])
     if type(coeffs['std']) == list:
         coeffs['std'] = np.asarray(coeffs['std'])
-    ncomponents = coeffs['mean'].size
+    try:
+        ncomponents = coeffs['mean'].size
+    except AttributeError:
+        ncomponents = 1
     if ncomponents == 1:
         return (field - coeffs['mean']) / coeffs['std']
     for i in range(ncomponents):

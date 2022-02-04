@@ -88,6 +88,8 @@ class GraphNet(Module):
         self.pressure_selector = torch.tensor(pressure_selector)
         self.flowrate_selector = torch.tensor(flowrate_selector)
 
+        self.average_flowrate = params['average_flowrate']
+
         # self.dropout = Dropout(0.5)
 
     def set_normalization_coefs(self, coefs_dict):
@@ -149,11 +151,11 @@ class GraphNet(Module):
         # mass loss
         if label_coefs['normalization_type'] == 'min_max':
             g.nodes['inner'].data['pred_q'] = label_coefs['min'][1] + \
-                                               g.nodes['inner'].data['pred_q'] * \
+                                                g.nodes['inner'].data['pred_q'] * \
                                               (label_coefs['max'][1] - label_coefs['min'][1])
         elif label_coefs['normalization_type'] == 'standard':
             g.nodes['inner'].data['pred_q'] = label_coefs['mean'][1] + \
-                                               g.nodes['inner'].data['pred_q'] * \
+                                                g.nodes['inner'].data['pred_q'] * \
                                               label_coefs['std'][1]
         if coefs_dict['type'] == 'min_max':
             g.nodes['inner'].data['pred_q'] = g.nodes['inner'].data['pred_q'] * \
@@ -161,6 +163,13 @@ class GraphNet(Module):
         elif coefs_dict['type'] == 'standard':
             g.nodes['inner'].data['pred_q'] = g.nodes['inner'].data['pred_q'] * \
                                               float(coefs_dict['flowrate']['std'])
+
+        # if coefs_dict['type'] == 'min_max':
+        #     g.nodes['inner'].data['pred_q'] = float(coefs_dict['flowrate']['min']) + g.nodes['inner'].data['pred_q'] * \
+        #                                       float(coefs_dict['flowrate']['max'] - coefs_dict['min']['flowrate'])
+        # elif coefs_dict['type'] == 'standard':
+        #     g.nodes['inner'].data['pred_q'] = float(coefs_dict['flowrate']['mean']) + g.nodes['inner'].data['pred_q'] * \
+        #                                       float(coefs_dict['flowrate']['std'])
 
         # this is kind of useless because pred should already be averaged
         g.update_all(fn.copy_src('pred_q', 'm'), fn.mean('m', 'average'),
@@ -173,7 +182,7 @@ class GraphNet(Module):
         diff = g.nodes['junction'].data['positive_flow'] - \
                g.nodes['junction'].data['negative_flow']
 
-        return torch.sum(torch.abs(diff))
+        return torch.mean(torch.abs(diff))
 
     def compute_flowrate_correction(self, edges):
         f1 = edges.src['average_q']
@@ -209,13 +218,14 @@ class GraphNet(Module):
                                           self.pressure_selector)
         g.nodes['inner'].data['pred_q'] = torch.matmul(g.nodes['inner'].data['h'],
                                           self.flowrate_selector)
-        g.update_all(fn.copy_src('pred_q', 'm'), fn.mean('m', 'average_q'),
-                     etype='inner_to_macro')
-        g.apply_edges(self.compute_flowrate_correction,
-                      etype='macro_to_inner')
-        g.update_all(fn.copy_e('correction', 'm'), fn.mean('m', 'correction'),
-                     etype='macro_to_inner')
-        g.nodes['inner'].data['pred_q'] = g.nodes['inner'].data['pred_q'] + \
-                                          g.nodes['inner'].data['correction']
+        if self.average_flowrate:
+            g.update_all(fn.copy_src('pred_q', 'm'), fn.mean('m', 'average_q'),
+                         etype='inner_to_macro')
+            g.apply_edges(self.compute_flowrate_correction,
+                          etype='macro_to_inner')
+            g.update_all(fn.copy_e('correction', 'm'), fn.mean('m', 'correction'),
+                         etype='macro_to_inner')
+            g.nodes['inner'].data['pred_q'] = g.nodes['inner'].data['pred_q'] + \
+                                              g.nodes['inner'].data['correction']
         return torch.cat((g.nodes['inner'].data['pred_p'],
                           g.nodes['inner'].data['pred_q']), dim=1)

@@ -65,9 +65,9 @@ if __name__ == "__main__":
     elapsed_time = end - start
     print('Training time = ' + str(elapsed_time))
 
-    dataset, _ = pp.generate_dataset(parameters['dataset_parameters']['split']['validation'],
-                                              dataset_params = parameters['dataset_parameters'],
-                                              coefs_dict = parameters['normalization_coefficients']['features'])
+    dataset = pp.generate_dataset(parameters['dataset_parameters']['split']['validation'],
+                                  dataset_params = parameters['dataset_parameters'],
+                                  coefs_dict = parameters['normalization_coefficients']['features'])
 
     err_p, err_q, global_err = test.test_rollout(gnn_model, parameters,
                                                  dataset,

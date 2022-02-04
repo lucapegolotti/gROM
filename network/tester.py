@@ -258,10 +258,10 @@ if __name__ == "__main__":
     training.create_directory('results_train')
     num_train = len(params['dataset_parameters']['split']['train'])
 
-    dataset, coefs_dict = pp.generate_dataset(params['dataset_parameters']['split']['train'],
-                                              dataset_params = params['dataset_parameters'],
-                                              coefs_dict = params['normalization_coefficients']['features'])
-
+    dataset = pp.generate_dataset(params['dataset_parameters']['split']['train'],
+                                  dataset_params = params['dataset_parameters'],
+                                  coefs_dict = params['normalization_coefficients']['features'])
+    coefs_dict = dataset.coefs_dict
 
     for i in range(num_train):
         training.create_directory('results_train/' + str(i))
@@ -274,9 +274,11 @@ if __name__ == "__main__":
     training.create_directory('results_validation')
     num_validation = len(params['dataset_parameters']['split']['validation'])
 
-    dataset, coefs_dict = pp.generate_dataset(params['dataset_parameters']['split']['validation'],
-                                              dataset_params = params['dataset_parameters'],
-                                              coefs_dict = params['normalization_coefficients']['features'])
+    dataset = pp.generate_dataset(params['dataset_parameters']['split']['validation'],
+                                  dataset_params = params['dataset_parameters'],
+                                  coefs_dict = params['normalization_coefficients']['features'])
+
+    coefs_dict = dataset.coefs_dict
 
     for i in range(num_validation):
         training.create_directory('results_validation/' + str(i))

@@ -47,19 +47,20 @@ def evaluate_model(gnn_model, train_dataloader, loss, metric = None,
         pred = gnn_model(batched_graph,
                          batched_graph.nodes['inner'].data['n_features'].float()).squeeze()
 
+        try:
+            c_loss = gnn_model.module.compute_continuity_loss(batched_graph, pred, label_coefs, coefs_dict)
+        except AttributeError:
+            c_loss = gnn_model.compute_continuity_loss(batched_graph, pred, label_coefs, coefs_dict)
+
         if continuity_coeff > 1e-12:
             # real = gnn_model.compute_continuity_loss(batched_graph, batched_graph.nodes['inner'].data['n_labels'], label_coefs, coefs_dict)
             # print(real)
-            try:
-                c_loss = gnn_model.module.compute_continuity_loss(batched_graph, pred, label_coefs, coefs_dict)
-            except AttributeError:
-                c_loss = gnn_model.compute_continuity_loss(batched_graph, pred, label_coefs, coefs_dict)
             loss_v = loss(pred, torch.reshape(batched_graph.nodes['inner'].data['n_labels'].float(),
                           pred.shape)) + c_loss * continuity_coeff
-            c_loss_global = c_loss_global + c_loss.detach().numpy()
         else:
             loss_v = loss(pred, torch.reshape(batched_graph.nodes['inner'].data['n_labels'].float(),
                           pred.shape))
+        c_loss_global = c_loss_global + c_loss
 
         global_loss = global_loss + loss_v.detach().numpy()
 
@@ -270,13 +271,14 @@ if __name__ == "__main__":
                    'out_size': 2,
                    'process_iterations': 3,
                    'hl_mlp': 1,
-                   'normalize': 1}
+                   'normalize': 1,
+                   'average_flowrate': 0}
     train_params = {'learning_rate': 0.008223127794360673,
                     'weight_decay': 0.36984122162067234,
                     'momentum': 0.0,
-                    'batch_size': 1,
-                    'nepochs': 1,
-                    'continuity_coeff': 0.1}
+                    'batch_size': 350,
+                    'nepochs': 40,
+                    'continuity_coeff': 0.0}
     dataset_params = {'normalization': 'standard',
                       'rate_noise': 0.006,
                       'label_normalization': 'min_max'}
