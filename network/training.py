@@ -52,7 +52,7 @@ def evaluate_model(gnn_model, train_dataloader, loss, metric = None,
         except AttributeError:
             c_loss = gnn_model.compute_continuity_loss(batched_graph, pred, label_coefs, coefs_dict)
 
-        if continuity_coeff > 1e-12:
+        if continuity_coeff > 1e-5:
             # real = gnn_model.compute_continuity_loss(batched_graph, batched_graph.nodes['inner'].data['n_labels'], label_coefs, coefs_dict)
             # print(real)
             loss_v = loss(pred, torch.reshape(batched_graph.nodes['inner'].data['n_labels'].float(),
@@ -157,7 +157,7 @@ def train_gnn_model(gnn_model, train, validation, optimizer_name, train_params,
     for epoch in range(nepochs):
         global_loss, count, elapsed, global_mae, c_loss = evaluate_model(gnn_model, train_dataloader,
                                                                          mse, weighted_mae, optimizer,
-                                                                         continuity_coeff = train_params['continuity_coeff'])
+                                                                         continuity_coeff = 10**train_params['continuity_coeff'])
         scheduler.step()
         print('{:.0f}\tloss = {:.4e} mae = {:.4e} continuity_loss = {:.4e} time = {:.2f} s'.format(epoch,
                                                                                            global_loss/count,
@@ -278,7 +278,7 @@ if __name__ == "__main__":
                     'momentum': 0.0,
                     'batch_size': 350,
                     'nepochs': 40,
-                    'continuity_coeff': 0.0}
+                    'continuity_coeff': -3}
     dataset_params = {'normalization': 'standard',
                       'rate_noise': 0.006,
                       'label_normalization': 'min_max'}

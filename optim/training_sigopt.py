@@ -27,14 +27,15 @@ if __name__ == "__main__":
         process_iterations=1,
         hl_mlp=2,
         normalize=1,
-        nepochs=1,
+        nepochs=400,
         batch_size=100,
         rate_noise=0.1,
         random_walks=0,
         normalization='standard',
         optimizer='adam',
         label_normalization='min_max',
-        continuity_coeff=10
+        continuity_coeff=-5,
+        average_flowrate=0
     )
     network_params = {'infeat_nodes': 12,
                     'infeat_edges': 4,
@@ -43,7 +44,8 @@ if __name__ == "__main__":
                     'out_size': 2,
                     'process_iterations': sigopt.params.process_iterations,
                     'hl_mlp': sigopt.params.hl_mlp,
-                    'normalize': sigopt.params.normalize}
+                    'normalize': sigopt.params.normalize,
+                    'average_flowrate:' sigopt.params.average_flowrate}
     train_params = {'learning_rate': sigopt.params.learning_rate,
                     'weight_decay': sigopt.params.weight_decay,
                     'momentum': sigopt.params.momentum,
