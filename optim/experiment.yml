@@ -57,7 +57,7 @@ parameters:
     min: -5
     max: 0
   type: int
-- name: average_flowrate
+- name: average_flowrate_training
   bounds:
     min: 0
     max: 1

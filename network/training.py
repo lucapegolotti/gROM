@@ -36,6 +36,7 @@ def generate_gnn_model(params_dict):
 
 def evaluate_model(gnn_model, train_dataloader, loss, metric = None,
                    optimizer = None, continuity_coeff = 0.0):
+    average_flowrate = gnn_model.params['average_flowrate_training']
     label_coefs = train_dataloader.dataloader.dataset.label_coefs
     coefs_dict = train_dataloader.dataloader.dataset.coefs_dict
     global_loss = 0
@@ -266,21 +267,21 @@ if __name__ == "__main__":
 
     params_dict = {'infeat_nodes': 12,
                    'infeat_edges': 4,
-                   'latent_size_gnn': 18,
+                   'latent_size_gnn': 16,
                    'latent_size_mlp': 64,
                    'out_size': 2,
                    'process_iterations': 3,
                    'hl_mlp': 1,
                    'normalize': 1,
-                   'average_flowrate': 0}
+                   'average_flowrate_training': 0}
     train_params = {'learning_rate': 0.008223127794360673,
                     'weight_decay': 0.36984122162067234,
                     'momentum': 0.0,
-                    'batch_size': 350,
-                    'nepochs': 40,
+                    'batch_size': 10,
+                    'nepochs': 200,
                     'continuity_coeff': -3}
     dataset_params = {'normalization': 'standard',
-                      'rate_noise': 0.006,
+                      'rate_noise': 60,
                       'label_normalization': 'min_max'}
 
     start = time.time()

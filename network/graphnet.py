@@ -88,7 +88,7 @@ class GraphNet(Module):
         self.pressure_selector = torch.tensor(pressure_selector)
         self.flowrate_selector = torch.tensor(flowrate_selector)
 
-        self.average_flowrate = params['average_flowrate']
+        self.params = params
 
         # self.dropout = Dropout(0.5)
 
@@ -189,7 +189,7 @@ class GraphNet(Module):
         f2 = edges.dst['pred_q']
         return {'correction': f1 - f2}
 
-    def forward(self, g, in_feat):
+    def forward(self, g, in_feat, average_flowrate = False):
         g.nodes['inner'].data['features_c'] = in_feat
         g.apply_nodes(self.encode_nodes, ntype='inner')
         g.apply_edges(self.encode_edges, etype='inner_to_inner')
@@ -218,7 +218,7 @@ class GraphNet(Module):
                                           self.pressure_selector)
         g.nodes['inner'].data['pred_q'] = torch.matmul(g.nodes['inner'].data['h'],
                                           self.flowrate_selector)
-        if self.average_flowrate:
+        if average_flowrate:
             g.update_all(fn.copy_src('pred_q', 'm'), fn.mean('m', 'average_q'),
                          etype='inner_to_macro')
             g.apply_edges(self.compute_flowrate_correction,

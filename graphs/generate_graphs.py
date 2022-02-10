@@ -31,7 +31,7 @@ def create_fixed_graph(raw_graph, area):
                   ('inlet', 'in_to_inner', 'inner'): \
                   (inlet_dict['edges'][:,0], inlet_dict['edges'][:,1]), \
                   ('outlet', 'out_to_inner', 'inner'): \
-                  (outlet_dict['edges'][:,0],outlet_dict['edges'][:,1]), \
+                  (outlet_dict['edges'][:,0], outlet_dict['edges'][:,1]), \
                   ('params', 'dummy', 'params'): \
                   (np.array([0]), np.array([0])), \
                   ('inner', 'inner_to_macro', 'macro'): \
@@ -119,6 +119,8 @@ def add_fields(graph, pressure, velocity):
     newgraph.nodes['params'].data['times'] = \
                         torch.from_numpy(np.expand_dims(np.array(times),axis=0))
 
+    print('-----')
+    print(times[0:10])
     newgraph.nodes['inner'].data['dt'] = graph.nodes['inner'].data['dt'] * (np.array(times[1] - times[0]))
 
     return newgraph

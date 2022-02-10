@@ -168,13 +168,15 @@ class DGL_Dataset(DGLDataset):
                             'normalization_type': self.label_normalization}
 
     def sample_noise(self, rate):
-        initial_rate = rate
         ngraphs = len(self.noise_pressures)
         for igraph in range(ngraphs):
+            dt = float(self.graphs[igraph].nodes['inner'].data['dt'][0])
+            dt = invert_normalize_function(dt, 'dt', self.coefs_dict)
+            actual_rate = rate * dt
             nnodes = self.noise_pressures[igraph].shape[0]
             for index in range(1,self.times[igraph].shape[1]-1):
-                self.noise_pressures[igraph][:,index] = np.random.normal(0, rate, (nnodes)) + self.noise_pressures[igraph][:,index-1]
-                self.noise_flowrates[igraph][:,index] = np.random.normal(0, rate, (nnodes)) + self.noise_flowrates[igraph][:,index-1]
+                self.noise_pressures[igraph][:,index] = np.random.normal(0, actual_rate, (nnodes)) + self.noise_pressures[igraph][:,index-1]
+                self.noise_flowrates[igraph][:,index] = np.random.normal(0, actual_rate, (nnodes)) + self.noise_flowrates[igraph][:,index-1]
 
     def get_state_dict(self, gindex, tindex):
         pressure_dict = {'inner': self.graphs[gindex].nodes['inner'].data['pressure_' + str(tindex)],

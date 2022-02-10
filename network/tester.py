@@ -145,6 +145,8 @@ def test_rollout(model, params, dataset, index_graph, split, out_folder):
     flowrates_pred = [flowrate_pred]
     flowrates_real = [flowrate_exact]
     start = time.time()
+    c_loss_total = 0
+    total_flowrate = 0
     for t in range(len(times)-1):
         tp1 = t+1
         next_pressure = pp.normalize_function(true_graph.nodes['inner'].data['pressure_' + str(tp1)], 'pressure', coefs_dict)
@@ -159,7 +161,14 @@ def test_rollout(model, params, dataset, index_graph, split, out_folder):
 
         pp.set_bcs(graph, new_bcs)
         pp.set_state(graph, new_state)
-        pred = model(graph, graph.nodes['inner'].data['n_features'].float()).squeeze()
+
+        average_flowrate = True
+        pred = model(graph, graph.nodes['inner'].data['n_features'].float(),
+                     average_flowrate=average_flowrate).squeeze()
+
+        c_loss = gnn_model.compute_continuity_loss(graph, pred, label_coefs, coefs_dict)
+        c_loss_total = c_loss_total + float(c_loss.detach().numpy())
+        total_flowrate = total_flowrate + float(true_graph.nodes['inlet'].data['flowrate_' + str(tp1)].detach().numpy())
 
         dp = bring_to_range_p(pred[:,0].detach().numpy())
 
@@ -216,6 +225,11 @@ def test_rollout(model, params, dataset, index_graph, split, out_folder):
     err_p = np.sqrt(err_p / norm_p)
     err_q = np.sqrt(err_q / norm_q)
 
+    print('Error pressure = {:.5e}'.format(err_p))
+    print('Error flowrate = {:.5e}'.format(err_q))
+    print('Global error = {:.5e}'.format(np.sqrt(err_p**2 + err_q**2)))
+    print('Relative flowrate loss = {:.5e}'.format(c_loss_total / total_flowrate))
+
     ptools.plot_3D(model_name, pred_states, graph.nodes['params'].data['times'].detach().numpy(),
                     coefs_dict, 'pressure', outfile_name=out_folder + '/3d_pressure_pred.mp4',
                     time = 5)
@@ -239,10 +253,6 @@ def test_rollout(model, params, dataset, index_graph, split, out_folder):
 
     ptools.plot_node_types(graph, out_folder + '/node_types.mp4', time = 5,
                            cmap = cm.get_cmap("plasma"))
-
-    print('Error pressure = {:.5e}'.format(err_p))
-    print('Error flowrate = {:.5e}'.format(err_q))
-    print('Global error = {:.5e}'.format(np.sqrt(err_p**2 + err_q**2)))
 
     return err_p, err_q, np.sqrt(err_p**2 + err_q**2)
 

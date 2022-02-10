@@ -35,7 +35,7 @@ if __name__ == "__main__":
         optimizer='adam',
         label_normalization='min_max',
         continuity_coeff=-5,
-        average_flowrate=0
+        average_flowrate_training=0
     )
     network_params = {'infeat_nodes': 12,
                     'infeat_edges': 4,
@@ -45,7 +45,7 @@ if __name__ == "__main__":
                     'process_iterations': sigopt.params.process_iterations,
                     'hl_mlp': sigopt.params.hl_mlp,
                     'normalize': sigopt.params.normalize,
-                    'average_flowrate': sigopt.params.average_flowrate}
+                    'average_flowrate_training': sigopt.params.average_flowrate_training}
     train_params = {'learning_rate': sigopt.params.learning_rate,
                     'weight_decay': sigopt.params.weight_decay,
                     'momentum': sigopt.params.momentum,
