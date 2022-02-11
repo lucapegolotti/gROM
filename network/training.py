@@ -35,51 +35,61 @@ def generate_gnn_model(params_dict):
     return GraphNet(params_dict)
 
 def evaluate_model(gnn_model, train_dataloader, loss, metric = None,
-                   optimizer = None, continuity_coeff = 0.0):
+                   optimizer = None, continuity_coeff = 0.0,
+                   validation_dataloader = None):
+
     average_flowrate = gnn_model.params['average_flowrate_training']
     label_coefs = train_dataloader.dataloader.dataset.label_coefs
     coefs_dict = train_dataloader.dataloader.dataset.coefs_dict
-    global_loss = 0
-    global_metric = 0
-    count = 0
-    start = time.time()
-    c_loss_global = 0
-    for batched_graph in train_dataloader:
-        pred = gnn_model(batched_graph,
-                         batched_graph.nodes['inner'].data['n_features'].float()).squeeze()
 
-        try:
-            c_loss = gnn_model.module.compute_continuity_loss(batched_graph, pred, label_coefs, coefs_dict)
-        except AttributeError:
-            c_loss = gnn_model.compute_continuity_loss(batched_graph, pred, label_coefs, coefs_dict)
+    def loop_over(dataloader, c_optimizer = None):
+        global_loss = 0
+        global_metric = 0
+        count = 0
+        c_loss_global = 0
+        for batched_graph in dataloader:
+            pred = gnn_model(batched_graph,
+                             batched_graph.nodes['inner'].data['n_features'].float()).squeeze()
 
-        if continuity_coeff > 1e-5:
-            # real = gnn_model.compute_continuity_loss(batched_graph, batched_graph.nodes['inner'].data['n_labels'], label_coefs, coefs_dict)
-            # print(real)
-            loss_v = loss(pred, torch.reshape(batched_graph.nodes['inner'].data['n_labels'].float(),
-                          pred.shape)) + c_loss * continuity_coeff
-        else:
-            loss_v = loss(pred, torch.reshape(batched_graph.nodes['inner'].data['n_labels'].float(),
-                          pred.shape))
-        c_loss_global = c_loss_global + c_loss
+            try:
+                c_loss = gnn_model.module.compute_continuity_loss(batched_graph, pred, label_coefs, coefs_dict)
+            except AttributeError:
+                c_loss = gnn_model.compute_continuity_loss(batched_graph, pred, label_coefs, coefs_dict)
 
-        global_loss = global_loss + loss_v.detach().numpy()
-
-        if metric != None:
-            metric_v = metric(pred, torch.reshape(batched_graph.nodes['inner'].data['n_labels'].float(),
+            if continuity_coeff > 1e-5:
+                # real = gnn_model.compute_continuity_loss(batched_graph, batched_graph.nodes['inner'].data['n_labels'], label_coefs, coefs_dict)
+                # print(real)
+                loss_v = loss(pred, torch.reshape(batched_graph.nodes['inner'].data['n_labels'].float(),
+                              pred.shape)) + c_loss * continuity_coeff
+            else:
+                loss_v = loss(pred, torch.reshape(batched_graph.nodes['inner'].data['n_labels'].float(),
                               pred.shape))
+            c_loss_global = c_loss_global + c_loss
 
-            global_metric = global_metric + metric_v.detach().numpy()
+            global_loss = global_loss + loss_v.detach().numpy()
 
-        if optimizer != None:
-            optimizer.zero_grad()
-            loss_v.backward()
-            optimizer.step()
-        count = count + 1
+            if metric != None:
+                metric_v = metric(pred, torch.reshape(batched_graph.nodes['inner'].data['n_labels'].float(),
+                                  pred.shape))
 
+                global_metric = global_metric + metric_v.detach().numpy()
+
+            if c_optimizer != None:
+                optimizer.zero_grad()
+                loss_v.backward()
+                optimizer.step()
+            count = count + 1
+
+        return {'global_loss': global_loss, 'count': count,
+                'continuity_loss': c_loss_global, 'global_metric': global_metric}
+
+    start = time.time()
+    train_results = loop_over(train_dataloader, optimizer)
+    if validation_dataloader:
+        validation_results = loop_over(validation_dataloader)
     end = time.time()
 
-    return global_loss, count, end - start, global_metric, c_loss_global
+    return train_results, validation_results, end - start
 
 def train_gnn_model(gnn_model, train, validation, optimizer_name, train_params,
                     checkpoint_fct = None, dataset_params = None):
@@ -115,15 +125,22 @@ def train_gnn_model(gnn_model, train, validation, optimizer_name, train_params,
     try:
         gnn_model.module.set_normalization_coefs(coefs_dict)
         train_sampler = DistributedSampler(train_dataset, num_replicas=dist.get_world_size(), rank=dist.get_rank())
+        validation_sampler = DistributedSampler(validation_sampler, num_replicas=dist.get_world_size(), rank=dist.get_rank())
     except AttributeError:
         gnn_model.set_normalization_coefs(coefs_dict)
         num_examples = len(train_dataset)
         num_train = int(num_examples)
         train_sampler = SubsetRandomSampler(torch.arange(num_train))
+        num_examples = len(validation_dataset)
+        num_validation = int(num_examples)
+        validation_sampler = SubsetRandomSampler(torch.arange(num_validation))
 
     train_dataloader = GraphDataLoader(train_dataset, sampler=train_sampler,
                                        batch_size=train_params['batch_size'],
                                        drop_last=False)
+    validation_dataloader = GraphDataLoader(validation_dataset, sampler=validation_sampler,
+                                            batch_size=train_params['batch_size'],
+                                            drop_last=False)
     try:
         print("my rank = %d, world = %d, train_dataloader_len = %d."
               % (dist.get_rank(), dist.get_world_size(), len(train_dataloader)), flush=True)
@@ -156,15 +173,21 @@ def train_gnn_model(gnn_model, train, validation, optimizer_name, train_params,
         chckp_epochs = list(np.floor(np.linspace(0, nepochs, 200)))
 
     for epoch in range(nepochs):
-        global_loss, count, elapsed, global_mae, c_loss = evaluate_model(gnn_model, train_dataloader,
-                                                                         mse, weighted_mae, optimizer,
-                                                                         continuity_coeff = 10**train_params['continuity_coeff'])
-        scheduler.step()
-        print('{:.0f}\tloss = {:.4e} mae = {:.4e} continuity_loss = {:.4e} time = {:.2f} s'.format(epoch,
-                                                                                           global_loss/count,
-                                                                                           global_mae/count,
-                                                                                           c_loss/count,
-                                                                                           elapsed), flush=True)
+        train_results, val_results, elapsed = evaluate_model(gnn_model, train_dataloader,
+                                                             mse, weighted_mae, optimizer,
+                                                             validation_dataloader = validation_dataloader,
+                                                             continuity_coeff = 10**train_params['continuity_coeff'])
+
+        msg = '{:.0f}\t'.format(epoch)
+        msg = msg + 'train_loss = {:.2e} '.format(train_results['global_loss']/train_results['count'])
+        msg = msg + 'train_mae = {:.2e} '.format(train_results['global_metric']/train_results['count'])
+        msg = msg + 'train_con_loss = {:.2e} '.format(train_results['continuity_loss']/train_results['count'])
+        msg = msg + 'val_loss = {:.2e} '.format(val_results['global_loss']/val_results['count'])
+        msg = msg + 'val_mae = {:.2e} '.format(val_results['global_metric']/val_results['count'])
+        msg = msg + 'val_con_loss = {:.2e} '.format(val_results['continuity_loss']/val_results['count'])
+        msg = msg + 'time = {:.2f} s'.format(elapsed)
+
+        print(msg, flush=True)
 
         if checkpoint_fct != None:
             if epoch in chckp_epochs:
@@ -173,15 +196,29 @@ def train_gnn_model(gnn_model, train, validation, optimizer_name, train_params,
         if epoch >= 10:
             if epoch >= 20:
                 train_dataset.sample_noise(dataset_params['rate_noise'])
+                validation_dataset.sample_noise(dataset_params['rate_noise'])
             else:
                 train_dataset.sample_noise(dataset_params['rate_noise'] * (epoch - 10)/10)
+                validation_dataset.sample_noise(dataset_params['rate_noise'] * (epoch - 10)/10)
 
     # compute final loss
-    global_loss, count, _, global_mae, _ = evaluate_model(gnn_model, train_dataloader, mse, weighted_mae)
-    print('\tFinal loss = {:.2e}\tfinal mae = {:.2e}'.format(global_loss/count,
-                                                             global_mae/count))
+    train_results, val_results, elapsed = evaluate_model(gnn_model, train_dataloader,
+                                                         mse, weighted_mae,
+                                                         validation_dataloader = validation_dataloader,
+                                                         continuity_coeff = 10**train_params['continuity_coeff'])
+    msg = 'end\t'
+    msg = msg + 'train_loss = {:.2e} '.format(train_results['global_loss']/train_results['count'])
+    msg = msg + 'train_mae = {:.2e} '.format(train_results['global_metric']/train_results['count'])
+    msg = msg + 'train_con_loss = {:.2e} '.format(train_results['continuity_loss']/train_results['count'])
+    msg = msg + 'val_loss = {:.2e} '.format(val_results['global_loss']/val_results['count'])
+    msg = msg + 'val_mae = {:.2e} '.format(val_results['global_metric']/val_results['count'])
+    msg = msg + 'val_con_loss = {:.2e} '.format(val_results['continuity_loss']/val_results['count'])
+    msg = msg + 'time = {:.2f} s'.format(elapsed)
 
-    return gnn_model, train_dataloader, global_loss / count,  global_mae / count,coefs_dict, train_dataset
+    print(msg, flush=True)
+
+    return gnn_model, train_dataloader, train_results['global_loss']/train_results['count'], \
+           train_results['global_metric']/train_results['count'], coefs_dict, train_dataset
 
 def create_directory(path):
     try:

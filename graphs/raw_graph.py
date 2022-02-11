@@ -9,6 +9,7 @@ class RawGraph:
         self.params = params
 
         self.divide()
+
         self.compute_h()
         self.find_junctions()
         self.resample()
@@ -26,6 +27,22 @@ class RawGraph:
         # we assume last point is an outlet
         self.outlets = np.append(self.outlets, self.points.shape[0]-1)
         self.portions = self.partition(self.points)
+
+        # use this piece of code to check if outlets are fine, if not
+        # tune tol
+        # fig = plt.figure()
+        # ax = plt.axes(projection='3d')
+        #
+        # ax.scatter(self.points[:,0],
+        #            self.points[:,1],
+        #            self.points[:,2], s = 0.5, color = 'black')
+        #
+        # for i in self.outlets:
+        #     ax.scatter(self.points[i,0],
+        #                self.points[i,1],
+        #                self.points[i,2], color = 'red')
+        #
+        # plt.show()
 
     def find_junctions(self):
         # there is one junction for each portion after 1 (the inlet)
@@ -111,7 +128,6 @@ class RawGraph:
                     cv = np.bincount(curslice[i1[chunki]:i2[chunki]+1]).argmax()
                     slices[i][i1[chunki]:i2[chunki]+1] = cv
 
-
         bid = self.project(bifurcation_id)
         for i in range(len(bid)):
             bid[i] = np.round(bid[i]).astype(int)
@@ -170,15 +186,44 @@ class RawGraph:
     def project(self, field):
         proj_field = []
         sliced_field = self.partition(field)
-
+        sliced_points = self.partition(self.points)
         for ifield in range(len(sliced_field)):
             weights = np.linalg.solve(self.interpolation_matrices[ifield],
                                       sliced_field[ifield])
             proj_values = np.matmul(self.projection_matrices[ifield], weights)
-
             proj_field.append(proj_values)
 
+            # uncomment this to check interpolation
+            # s = [0]
+            # for ip in range(sliced_points[ifield].shape[0]-1):
+            #     s.append(s[-1] + np.linalg.norm(sliced_points[ifield][ip+1,:] - sliced_points[ifield][ip,:]))
+            #
+            # s1 = [0]
+            # for ip in range(self.resampled_portions[ifield].shape[0]-1):
+            #     s1.append(s1[-1] + np.linalg.norm(self.resampled_portions[ifield][ip+1,:] - self.resampled_portions[ifield][ip,:]))
+            #
+            # fig = plt.figure()
+            # ax = plt.axes()
+            #
+            # ax.scatter(s, sliced_field[ifield],color='black')
+            # ax.scatter(s1, proj_values,color='red')
+            #
+            # plt.show()
+
         return proj_field
+
+    # def project(self, field):
+    #     proj_field = []
+    #     sliced_field = self.partition(field)
+    #
+    #     for ifield in range(len(sliced_field)):
+    #         weights = np.linalg.solve(self.interpolation_matrices[ifield],
+    #                                   sliced_field[ifield])
+    #         proj_values = np.matmul(self.projection_matrices[ifield], weights)
+    #
+    #         proj_field.append(proj_values)
+    #
+    #     return proj_field
 
     def resample(self):
         resampled_portions = []
