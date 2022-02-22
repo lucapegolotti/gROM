@@ -302,12 +302,21 @@ if __name__ == "__main__":
 
     dataset_json = json.load(open('training_dataset.json'))
 
-    params_dict = {'infeat_nodes': 12,
+    # params_dict = {'infeat_nodes': 13,
+    #                'infeat_edges': 4,
+    #                'latent_size_gnn': 16,
+    #                'latent_size_mlp': 64,
+    #                'out_size': 2,
+    #                'process_iterations': 3,
+    #                'hl_mlp': 1,
+    #                'normalize': 1,
+    #                'average_flowrate_training': 0}
+    params_dict = {'infeat_nodes': 13,
                    'infeat_edges': 4,
-                   'latent_size_gnn': 16,
-                   'latent_size_mlp': 64,
+                   'latent_size_gnn': 8,
+                   'latent_size_mlp': 32,
                    'out_size': 2,
-                   'process_iterations': 3,
+                   'process_iterations': 2,
                    'hl_mlp': 1,
                    'normalize': 1,
                    'average_flowrate_training': 0}

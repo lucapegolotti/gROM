@@ -57,13 +57,20 @@ def get_color_nodes(graph, cmap = cm.get_cmap("plasma")):
     for i in range(node_type.shape[0]):
         colors[i] = np.where(node_type[i,:] == 1)[0]
 
+    inner_node_type = np.copy(colors)
+
     colors = colors / np.max(colors)
 
     color_node[get_mask(graph,'inner')] = cmap(colors)
     color_node[get_mask(graph,'inlet')] = np.array([1,0,0,1])
     color_node[get_mask(graph,'outlet')] = np.array([0,1,0,1])
 
-    return color_node
+    node_type = np.zeros((nnodes,))
+    node_type[get_mask(graph,'inner')] = inner_node_type
+    node_type[get_mask(graph,'inlet')] = -1
+    node_type[get_mask(graph,'outlet')] = -2
+
+    return color_node, node_type
 
 def get_solution_all_nodes(state, graph):
 
@@ -230,6 +237,12 @@ def test_rollout(model, params, dataset, index_graph, split, out_folder):
     print('Global error = {:.5e}'.format(np.sqrt(err_p**2 + err_q**2)))
     print('Relative flowrate loss = {:.5e}'.format(c_loss_total / total_flowrate))
 
+    color_nodes, nodes_type = get_color_nodes(graph, cmap = cm.get_cmap("plasma"))
+
+    ptools.plot_static(graph, pressures_pred, flowrates_pred, pressures_real, flowrates_real,
+                       graph.nodes['params'].data['times'].detach().numpy(),
+                       coefs_dict, nodes_type, npoints=3, outdir=out_folder)
+
     ptools.plot_3D(model_name, pred_states, graph.nodes['params'].data['times'].detach().numpy(),
                     coefs_dict, 'pressure', outfile_name=out_folder + '/3d_pressure_pred.mp4',
                     time = 5)
@@ -247,7 +260,7 @@ def test_rollout(model, params, dataset, index_graph, split, out_folder):
                     time = 5)
 
     ptools.plot_linear(pressures_pred, flowrates_pred, pressures_real, flowrates_real,
-                       get_color_nodes(graph, cmap = cm.get_cmap("plasma")),
+                       color_nodes,
                        graph.nodes['params'].data['times'].detach().numpy(),
                        coefs_dict, out_folder + '/linear.mp4', time = 5)
 
@@ -265,22 +278,6 @@ if __name__ == "__main__":
     gnn_model.load_state_dict(torch.load(path + '/trained_gnn.pms'))
     gnn_model.eval()
 
-    training.create_directory('results_train')
-    num_train = len(params['dataset_parameters']['split']['train'])
-
-    dataset = pp.generate_dataset(params['dataset_parameters']['split']['train'],
-                                  dataset_params = params['dataset_parameters'],
-                                  coefs_dict = params['normalization_coefficients']['features'])
-    coefs_dict = dataset.coefs_dict
-
-    for i in range(num_train):
-        training.create_directory('results_train/' + str(i))
-        err_p, err_q, global_error = test_rollout(gnn_model, params,
-                                                  dataset, index_graph = i,
-                                                  split = 'train',
-                                                  out_folder = 'results_train/' + str(i))
-
-
     training.create_directory('results_validation')
     num_validation = len(params['dataset_parameters']['split']['validation'])
 
@@ -296,3 +293,18 @@ if __name__ == "__main__":
                                                   dataset, index_graph = i,
                                                   split = 'validation',
                                                   out_folder = 'results_validation/' + str(i))
+
+    training.create_directory('results_train')
+    num_train = len(params['dataset_parameters']['split']['train'])
+
+    dataset = pp.generate_dataset(params['dataset_parameters']['split']['train'],
+                                  dataset_params = params['dataset_parameters'],
+                                  coefs_dict = params['normalization_coefficients']['features'])
+    coefs_dict = dataset.coefs_dict
+
+    for i in range(num_train):
+        training.create_directory('results_train/' + str(i))
+        err_p, err_q, global_error = test_rollout(gnn_model, params,
+                                                  dataset, index_graph = i,
+                                                  split = 'train',
+                                                  out_folder = 'results_train/' + str(i))

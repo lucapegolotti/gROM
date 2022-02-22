@@ -69,10 +69,12 @@ def create_fixed_graph(raw_graph, area):
     graph.nodes['inner'].data['x'] = torch.from_numpy(inner_dict['x'])
     graph.nodes['inner'].data['global_mask'] = torch.from_numpy(inner_dict['mask'])
     graph.nodes['inner'].data['area'] = torch.from_numpy(area[inner_dict['mask']].astype(DTYPE))
+    max_bif_degree = 14
     graph.nodes['inner'].data['node_type'] = torch.nn.functional.one_hot(
                                              torch.from_numpy(
                                              np.squeeze(
-                                             inner_dict['node_type'].astype(int))))
+                                             inner_dict['node_type'].astype(int))),
+                                             num_classes=max_bif_degree)
     graph.nodes['inner'].data['dt'] = torch.ones(graph.nodes['inner'].data['area'].shape)
     graph.nodes['inner'].data['tangent'] = torch.from_numpy(inner_dict['tangent'])
 
@@ -155,7 +157,9 @@ def generate_graphs(model_name, model_params, input_dir, output_dir, save = True
     soln = io.read_geo(input_dir + '/' + model_name + '.vtp').GetOutput()
     fields, _, p_array = io.get_all_arrays(soln)
 
-    raw_graph = RawGraph(p_array, model_params)
+    debug = False
+
+    raw_graph = RawGraph(p_array, model_params, debug)
     area = raw_graph.project(fields['area'])
     raw_graph.set_node_types(fields['BifurcationId'])
 

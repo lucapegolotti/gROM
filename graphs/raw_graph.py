@@ -2,18 +2,43 @@ import numpy as np
 import scipy
 from scipy import interpolate
 import matplotlib.pyplot as plt
+import matplotlib.cm as cm
 
 class RawGraph:
-    def __init__(self, points, params):
+    def __init__(self, points, params, debug = False):
         self.points = points
         self.params = params
+        self.debug = debug
 
         self.divide()
 
         self.compute_h()
         self.find_junctions()
         self.resample()
+        self.find_connectivity()
         self.construct_interpolation_matrices()
+
+    def find_connectivity(self):
+        # find connectivity
+        nportions = len(self.resampled_portions)
+        # every component stores idx of parent branch
+        self.connectivity = [None] * nportions
+        # we start from 1 because we assume that 0 is the global inlet
+        for ipor1 in range(1,nportions):
+            portion1 = self.resampled_portions[ipor1]
+            mindist = np.infty
+            minidxpor = None
+            minidxpoint = None
+            for ipor2 in range(0,nportions):
+                if ipor1 != ipor2:
+                    portion2 = self.resampled_portions[ipor2]
+                    diffs = np.linalg.norm(portion2 - portion1[0,:],axis=1)
+                    curmindist = np.min(diffs)
+                    if curmindist < mindist:
+                        minidxpoint = np.argmin(diffs)
+                        mindist = curmindist
+                        minidx = ipor2
+            self.connectivity[ipor1] = [minidx, minidxpoint]
 
     def divide(self):
         # we assume inlet is the first point
@@ -30,19 +55,20 @@ class RawGraph:
 
         # use this piece of code to check if outlets are fine, if not
         # tune tol
-        # fig = plt.figure()
-        # ax = plt.axes(projection='3d')
-        #
-        # ax.scatter(self.points[:,0],
-        #            self.points[:,1],
-        #            self.points[:,2], s = 0.5, color = 'black')
-        #
-        # for i in self.outlets:
-        #     ax.scatter(self.points[i,0],
-        #                self.points[i,1],
-        #                self.points[i,2], color = 'red')
-        #
-        # plt.show()
+        if self.debug:
+            fig = plt.figure()
+            ax = plt.axes(projection='3d')
+
+            ax.scatter(self.points[:,0],
+                       self.points[:,1],
+                       self.points[:,2], s = 0.5, color = 'black')
+
+            for i in self.outlets:
+                ax.scatter(self.points[i,0],
+                           self.points[i,1],
+                           self.points[i,2], color = 'red')
+
+            plt.show()
 
     def find_junctions(self):
         # there is one junction for each portion after 1 (the inlet)
@@ -128,14 +154,37 @@ class RawGraph:
                     cv = np.bincount(curslice[i1[chunki]:i2[chunki]+1]).argmax()
                     slices[i][i1[chunki]:i2[chunki]+1] = cv
 
+        # when resampling, two bifurcations with different ids could be merged
+        # into one if they're separate by a small branch. Here we loop over all
+        # portions to check if bifurcation ids are consistent
+        def check_inlets(ids):
+            something_changed = True
+
+            nportions = len(ids)
+            while something_changed:
+                something_changed = False
+                for i in range(1, nportions):
+                    conn = self.connectivity[i]
+                    fatherid = ids[conn[0]][conn[1]]
+                    if ids[i][0] != fatherid:
+                        something_changed = True
+                        j = 0
+                        initialv = np.copy(ids[i][0])
+                        while j != ids[i].size and ids[i][j] == initialv:
+                            # set id equal to father
+                            ids[i][j] = fatherid
+                            j = j + 1
+
         bid = self.project(bifurcation_id)
         for i in range(len(bid)):
             bid[i] = np.round(bid[i]).astype(int)
         fix_singular_points(bid, -1)
+        check_inlets(bid)
         self.bifurcation_id = self.project(bifurcation_id)
         for i in range(len(bid)):
             self.bifurcation_id[i] = np.round(self.bifurcation_id[i]).astype(int)
         fix_singular_points(self.bifurcation_id, -1)
+        check_inlets(self.bifurcation_id)
 
         allids = set()
         for ids in bid:
@@ -156,74 +205,71 @@ class RawGraph:
 
         for id in allids:
             for i in range(len(bid)):
-                idxs = np.where(bid[i] == id)[0]
+                idxs = np.where(self.bifurcation_id[i] == id)[0]
                 bid[i][idxs] = degrees[id]
 
-        # # fix singular points
-        # for i in range(len(bid)):
-        #     curbid = np.squeeze(bid[i])
-        #
-        #     # find consecutive chunks
-        #     idxs = np.where(curbid != 0)[0]
-        #
-        #
-        #     i1 = [idxs[0]]
-        #     i2 = []
-        #     for j in range(len(idxs)-2):
-        #         if idxs[j] + 1 != idxs[j+1]:
-        #             i2.append(idxs[j])
-        #             i1.append(idxs[j+1])
-        #
-        #     i2.append(idxs[len(idxs)-1])
-        #
-        #     # set chunk to most common value
-        #     for chunki in range(len(i1)):
-        #         cv = np.bincount(curbid[i1[chunki]:i2[chunki]+1]).argmax()
-        #         bid[i][i1[chunki]:i2[chunki]+1] = cv
+        # fix singular points
+        for i in range(len(bid)):
+            curbid = np.squeeze(bid[i])
+
+            # find consecutive chunks
+            idxs = np.where(curbid != 0)[0]
+
+            i1 = [idxs[0]]
+            i2 = []
+            for j in range(len(idxs)-2):
+                if idxs[j] + 1 != idxs[j+1]:
+                    i2.append(idxs[j])
+                    i1.append(idxs[j+1])
+
+            i2.append(idxs[len(idxs)-1])
+
+            # set chunk to most common value
+            for chunki in range(len(i1)):
+                cv = np.bincount(curbid[i1[chunki]:i2[chunki]+1]).argmax()
+                bid[i][i1[chunki]:i2[chunki]+1] = cv
+
+        # fix 2 end points in every section (they can't be bifurcations, -1 is outlet)
+        for id in range(len(bid)):
+            bid[id][-2:] = 0
+
+        for id in range(len(self.bifurcation_id)):
+            self.bifurcation_id[id][-2:] = -1
 
         self.nodes_type = bid
+        self.show()
 
     def project(self, field):
         proj_field = []
         sliced_field = self.partition(field)
-        sliced_points = self.partition(self.points)
+
+        if self.debug:
+            sliced_points = self.partition(self.points)
         for ifield in range(len(sliced_field)):
             weights = np.linalg.solve(self.interpolation_matrices[ifield],
                                       sliced_field[ifield])
             proj_values = np.matmul(self.projection_matrices[ifield], weights)
             proj_field.append(proj_values)
 
-            # uncomment this to check interpolation
-            # s = [0]
-            # for ip in range(sliced_points[ifield].shape[0]-1):
-            #     s.append(s[-1] + np.linalg.norm(sliced_points[ifield][ip+1,:] - sliced_points[ifield][ip,:]))
-            #
-            # s1 = [0]
-            # for ip in range(self.resampled_portions[ifield].shape[0]-1):
-            #     s1.append(s1[-1] + np.linalg.norm(self.resampled_portions[ifield][ip+1,:] - self.resampled_portions[ifield][ip,:]))
-            #
-            # fig = plt.figure()
-            # ax = plt.axes()
-            #
-            # ax.scatter(s, sliced_field[ifield],color='black')
-            # ax.scatter(s1, proj_values,color='red')
-            #
-            # plt.show()
+            # check interpolation
+            if self.debug:
+                s = [0]
+                for ip in range(sliced_points[ifield].shape[0]-1):
+                    s.append(s[-1] + np.linalg.norm(sliced_points[ifield][ip+1,:] - sliced_points[ifield][ip,:]))
+
+                s1 = [0]
+                for ip in range(self.resampled_portions[ifield].shape[0]-1):
+                    s1.append(s1[-1] + np.linalg.norm(self.resampled_portions[ifield][ip+1,:] - self.resampled_portions[ifield][ip,:]))
+
+                fig = plt.figure()
+                ax = plt.axes()
+
+                ax.scatter(s, sliced_field[ifield],color='black')
+                ax.scatter(s1, proj_values,color='red')
+
+                plt.show()
 
         return proj_field
-
-    # def project(self, field):
-    #     proj_field = []
-    #     sliced_field = self.partition(field)
-    #
-    #     for ifield in range(len(sliced_field)):
-    #         weights = np.linalg.solve(self.interpolation_matrices[ifield],
-    #                                   sliced_field[ifield])
-    #         proj_values = np.matmul(self.projection_matrices[ifield], weights)
-    #
-    #         proj_field.append(proj_values)
-    #
-    #     return proj_field
 
     def resample(self):
         resampled_portions = []
@@ -572,7 +618,6 @@ class RawGraph:
             if inner_bif_id[i] != -1:
                 bifs_ids.add(int(inner_bif_id[i]))
 
-
         inflows = []
         outflows = []
         for bif_id in bifs_ids:
@@ -622,31 +667,33 @@ class RawGraph:
     def show(self):
         fig = plt.figure()
         ax = plt.axes(projection='3d')
+        cmap = cm.get_cmap("tab20")
+
+        m = np.infty
+        M = np.NINF
+
+        # colorby = self.nodes_type
+        colorby = self.bifurcation_id
+
+        for i in range(len(self.portions)):
+            m = np.min([np.min(colorby[i]), M])
+            M = np.max([np.max(colorby[i]), M])
 
         for i in range(len(self.portions)):
             portion = self.resampled_portions[i]
             nnodes = portion.shape[0]
 
             colors = np.zeros((nnodes,3))
-            for j in range(nnodes):
-                if self.nodes_type[i][j] == 1:
-                    colors[j,0] = 1
-                elif self.nodes_type[i][j] == 2:
-                    colors[j,2] = 1
-                elif self.nodes_type[i][j] == 3:
-                    colors[j,1] = 1
-                elif self.nodes_type[i][j] == 4:
-                    colors[j,0] = 0.6
-                    colors[j,1] = 0.6
-                elif self.nodes_type[i][j] == 5:
-                    colors[j,0] = 1
-                    colors[j,2] = 0.5
-                elif self.nodes_type[i][j] == 6:
-                    colors[j,1] = 0.4
-                    colors[j,2] = 0.7
+            colors = cmap((colorby[i] - m) / (M - m))
 
-            ax.scatter(self.resampled_portions[i][:,0],
-                       self.resampled_portions[i][:,1],
-                       self.resampled_portions[i][:,2], color = colors)
+            for j in range(self.nodes_type[i].shape[0]):
+                if (colorby[i][j] - m) / (M - m) == 0:
+                    ax.scatter(self.resampled_portions[i][j,0],
+                               self.resampled_portions[i][j,1],
+                               self.resampled_portions[i][j,2], color = 'black', depthshade=0)
+                else:
+                    ax.scatter(self.resampled_portions[i][j,0],
+                               self.resampled_portions[i][j,1],
+                               self.resampled_portions[i][j,2], color = colors[j,:], depthshade=0)
 
         plt.show()
