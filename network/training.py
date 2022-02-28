@@ -337,7 +337,7 @@ if __name__ == "__main__":
     train_params = {'learning_rate': 0.008223127794360673,
                     'weight_decay': 0.36984122162067234,
                     'momentum': 0.0,
-                    'batch_size': 10,
+                    'batch_size': 100,
                     'nepochs': 200,
                     'continuity_coeff': -3}
     dataset_params = {'normalization': 'standard',
