@@ -1,4 +1,5 @@
 import torch
+import dgl
 from torch.nn.modules.module import Module
 from torch.nn import LayerNorm
 from torch.nn import Linear
@@ -164,13 +165,6 @@ class GraphNet(Module):
             g.nodes['inner'].data['pred_q'] = g.nodes['inner'].data['pred_q'] * \
                                               float(coefs_dict['flowrate']['std'])
 
-        # if coefs_dict['type'] == 'min_max':
-        #     g.nodes['inner'].data['pred_q'] = float(coefs_dict['flowrate']['min']) + g.nodes['inner'].data['pred_q'] * \
-        #                                       float(coefs_dict['flowrate']['max'] - coefs_dict['min']['flowrate'])
-        # elif coefs_dict['type'] == 'standard':
-        #     g.nodes['inner'].data['pred_q'] = float(coefs_dict['flowrate']['mean']) + g.nodes['inner'].data['pred_q'] * \
-        #                                       float(coefs_dict['flowrate']['std'])
-
         # this is kind of useless because pred should already be averaged
         g.update_all(fn.copy_src('pred_q', 'm'), fn.mean('m', 'average'),
                      etype='inner_to_macro')
@@ -181,6 +175,26 @@ class GraphNet(Module):
 
         diff = g.nodes['junction'].data['positive_flow'] - \
                g.nodes['junction'].data['negative_flow']
+
+        try:
+            mask = g.nodes['inlet'].data['mask']
+            g.nodes['inlet'].data['pred_q'] = g.nodes['inner'].data['pred_q'][mask]
+
+            g.update_all(fn.copy_src('pred_q', 'm'), fn.sum('m', 'positive_flow_inlet'),
+                         etype='inlet_to_junction_positive')
+            diff = diff + g.nodes['junction'].data['positive_flow_inlet']
+        except dgl._ffi.base.DGLError:
+            pass
+
+
+        try:
+            mask = g.nodes['outlet'].data['mask']
+            g.nodes['outlet'].data['pred_q'] = g.nodes['inner'].data['pred_q'][mask]
+            g.update_all(fn.copy_src('pred_q', 'm'), fn.sum('m', 'negative_flow_outlet'),
+                         etype='outlet_to_junction_positive')
+            diff = diff + g.nodes['junction'].data['positive_flow_outlet']
+        except dgl._ffi.base.DGLError:
+            pass
 
         return torch.mean(torch.abs(diff))
 

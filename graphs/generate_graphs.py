@@ -47,6 +47,24 @@ def create_fixed_graph(raw_graph, area):
                   (macro_dict['macro_to_junction_negative'][:,0],
                    macro_dict['macro_to_junction_negative'][:,1])}
 
+    if macro_dict['inlet_to_junction_positive'].size > 0:
+        graph_data[('inlet', 'inlet_to_junction_positive', 'junction')] = \
+                  (macro_dict['inlet_to_junction_positive'][:,0],
+                   macro_dict['inlet_to_junction_positive'][:,1])
+    else:
+        print('entering here')
+        graph_data[('inlet', 'inlet_to_junction_positive', 'junction')] = \
+                  (np.array([]), np.array([]))
+
+    if macro_dict['outlet_to_junction_negative'].size > 0:
+        graph_data[('outlet', 'outlet_to_junction_negative', 'junction')] = \
+                  (macro_dict['outlet_to_junction_negative'][:,0],
+                   macro_dict['outlet_to_junction_negative'][:,1])
+    else:
+        print('entering there')
+        graph_data[('outlet', 'outlet_to_junction_negative', 'junction')] = \
+                  (np.array([]), np.array([]))
+
     graph = dgl.heterograph(graph_data)
 
     graph.edges['inner_to_inner'].data['position'] = \
@@ -55,21 +73,20 @@ def create_fixed_graph(raw_graph, area):
                         torch.from_numpy(inner_dict['edges'])
     graph.edges['in_to_inner'].data['distance'] = \
                         torch.from_numpy(inlet_dict['distance'].astype(DTYPE))
-    graph.edges['in_to_inner'].data['physical_contiguous'] = \
-                        torch.from_numpy(inlet_dict['physical_contiguous'])
+    graph.edges['in_to_inner'].data['physical_same'] = \
+                        torch.from_numpy(inlet_dict['physical_same'])
     graph.edges['in_to_inner'].data['edges'] = \
                         torch.from_numpy(inlet_dict['edges'])
     graph.edges['out_to_inner'].data['distance'] = \
                         torch.from_numpy(outlet_dict['distance'].astype(DTYPE))
-    graph.edges['out_to_inner'].data['physical_contiguous'] = \
-                        torch.from_numpy(outlet_dict['physical_contiguous'])
+    graph.edges['out_to_inner'].data['physical_same'] = \
+                        torch.from_numpy(outlet_dict['physical_same'])
     graph.edges['out_to_inner'].data['edges'] = \
                         torch.from_numpy(outlet_dict['edges'])
 
     graph.nodes['inner'].data['x'] = torch.from_numpy(inner_dict['x'])
-    graph.nodes['inner'].data['global_mask'] = torch.from_numpy(inner_dict['mask'])
-    graph.nodes['inner'].data['area'] = torch.from_numpy(area[inner_dict['mask']].astype(DTYPE))
-    max_bif_degree = 14
+    graph.nodes['inner'].data['area'] = torch.from_numpy(area.astype(DTYPE))
+    max_bif_degree = 16
     graph.nodes['inner'].data['node_type'] = torch.nn.functional.one_hot(
                                              torch.from_numpy(
                                              np.squeeze(
@@ -78,11 +95,11 @@ def create_fixed_graph(raw_graph, area):
     graph.nodes['inner'].data['dt'] = torch.ones(graph.nodes['inner'].data['area'].shape)
     graph.nodes['inner'].data['tangent'] = torch.from_numpy(inner_dict['tangent'])
 
-    graph.nodes['inlet'].data['global_mask'] = torch.from_numpy(inlet_dict['mask'])
+    graph.nodes['inlet'].data['mask'] = torch.from_numpy(inlet_dict['mask'])
     graph.nodes['inlet'].data['area'] = torch.from_numpy(area[inlet_dict['mask']].astype(DTYPE))
     graph.nodes['inlet'].data['x'] = torch.from_numpy(inlet_dict['x'])
 
-    graph.nodes['outlet'].data['global_mask'] = torch.from_numpy(outlet_dict['mask'])
+    graph.nodes['outlet'].data['mask'] = torch.from_numpy(outlet_dict['mask'])
     graph.nodes['outlet'].data['area'] = torch.from_numpy(area[outlet_dict['mask']].astype(DTYPE))
     graph.nodes['outlet'].data['x'] = torch.from_numpy(outlet_dict['x'])
 
@@ -96,10 +113,10 @@ def create_fixed_graph(raw_graph, area):
 
 def set_field(graph, name_field, field):
     def set_in_node(node_type):
-        mask = graph.nodes[node_type].data['global_mask'].detach().numpy().astype(int)
+        mask = graph.nodes[node_type].data['mask'].detach().numpy().astype(int)
         masked_field = torch.from_numpy(field[mask].astype(DTYPE))
         graph.nodes[node_type].data[name_field] = masked_field
-    set_in_node('inner')
+    graph.nodes['inner'].data[name_field] = torch.from_numpy(field.astype(DTYPE))
     set_in_node('inlet')
     set_in_node('outlet')
 

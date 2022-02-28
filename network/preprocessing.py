@@ -80,7 +80,7 @@ def set_state(graph, state_dict, next_state_dict = None, noise_dict = None, coef
             graph.edges[edge_type].data['e_features'] = graph.edges[edge_type].data['position'].float()
         else:
             graph.edges[edge_type].data['e_features'] = torch.cat((graph.edges[edge_type].data['distance'][:,None],
-                                                                   graph.edges[edge_type].data['physical_contiguous'][:,None]), 1).float()
+                                                                   graph.edges[edge_type].data['physical_same'][:,None]), 1).float()
     per_node_type('inner')
     per_node_type('inlet')
     per_node_type('outlet')
@@ -303,9 +303,15 @@ def standardize(field, coeffs):
     except AttributeError:
         ncomponents = 1
     if ncomponents == 1:
-        return (field - coeffs['mean']) / coeffs['std']
+        if coeffs['std'] < 1e-12:
+            return (field - coeffs['mean'])
+        else:
+            return (field - coeffs['mean']) / coeffs['std']
     for i in range(ncomponents):
-        field[:,i] = (field[:,i] - coeffs['mean'][i]) / coeffs['std'][i]
+        if coeffs['std'][i] < 1e-12:
+            field[:,i] = (field[:,i] - coeffs['mean'][i])
+        else:
+            field[:,i] = (field[:,i] - coeffs['mean'][i]) / coeffs['std'][i]
     return field
 
 def invert_standardize(field, coeffs):

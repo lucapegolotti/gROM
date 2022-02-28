@@ -34,7 +34,7 @@ def circle3D(center, normal, radius, npoints):
 
     return circle
 
-def plot_3D_graph(graph, state = None, coefs = None, field_name = None, cmap = cm.get_cmap("viridis")):
+def plot_3D_graph(graph, state = None, coefs = None, bounds = None, field_name = None, cmap = cm.get_cmap("viridis")):
     fig = plt.figure(figsize=(8, 8), dpi=200)
     # fig.subplots_adjust(left=0, bottom=0, right=1, top=1, wspace=None, hspace=None)
     ax = plt.axes(projection='3d')
@@ -69,14 +69,14 @@ def plot_3D_graph(graph, state = None, coefs = None, field_name = None, cmap = c
 
         field = pp.invert_normalize_function(field, field_name, coefs)
 
-        if type(coefs[field_name]['min']) == list:
-            coefs[field_name]['min'] = np.asarray(coefs[field_name]['min'])
+        if type(bounds[field_name]['min']) == list:
+            bounds[field_name]['min'] = np.asarray(bounds[field_name]['min'])
 
-        if type(coefs[field_name]['max']) == list:
-            coefs[field_name]['max'] = np.asarray(coefs[field_name]['max'])
+        if type(bounds[field_name]['max']) == list:
+            bounds[field_name]['max'] = np.asarray(bounds[field_name]['max'])
 
-        C = (field - coefs[field_name]['min']) / \
-            (coefs[field_name]['max'] - coefs[field_name]['min'])
+        C = (field - bounds[field_name]['min']) / \
+            (bounds[field_name]['max'] - bounds[field_name]['min'])
 
         scatterpts = ax.scatter(x[:,0], x[:,1], x[:,2],
                                 color=cmap(C), depthshade=0)
@@ -229,7 +229,7 @@ def plot_geo_with_circles(graph,cmap = cm.get_cmap("viridis")):
     ax.set_zlim((minx[2],maxx[2]))
 
 def plot_linear(pressures_pred, flowrates_pred, pressures_real, flowrates_real,
-                colors, times, coefs_dict, outfile_name, time, framerate = 60):
+                colors, times, coefs_dict, bounds, outfile_name, time, framerate = 60):
 
     nframes = time * framerate
     indices = np.floor(np.linspace(0,len(pressures_pred)-1,nframes)).astype(int)
@@ -283,9 +283,9 @@ def plot_linear(pressures_pred, flowrates_pred, pressures_real, flowrates_real,
         scatter_real_q.set_offsets(dq)
         ax[0].set_title('{:.2f} s'.format(float(times[i])))
         ax[0].set_xlim(0,len(pressures_pred[i]))
-        ax[0].set_ylim((coefs_dict['pressure']['min']-np.abs(coefs_dict['pressure']['min'])*0.1)/1333.2,(coefs_dict['pressure']['max']+np.abs(coefs_dict['pressure']['max'])*0.1) / 1333.2)
+        ax[0].set_ylim((bounds['pressure']['min']-np.abs(bounds['pressure']['min'])*0.1)/1333.2,(bounds['pressure']['max']+np.abs(bounds['pressure']['max'])*0.1) / 1333.2)
         ax[1].set_xlim(0,len(flowrates_pred[i]))
-        ax[1].set_ylim(coefs_dict['flowrate']['min']-np.abs(coefs_dict['flowrate']['min'])*0.1,coefs_dict['flowrate']['max']+np.abs(coefs_dict['flowrate']['max'])*0.1)
+        ax[1].set_ylim(bounds['flowrate']['min']-np.abs(bounds['flowrate']['min'])*0.1,bounds['flowrate']['max']+np.abs(bounds['flowrate']['max'])*0.1)
         return scatter_pred_p,
 
     anim = animation.FuncAnimation(fig, animation_frame,
@@ -294,64 +294,8 @@ def plot_linear(pressures_pred, flowrates_pred, pressures_real, flowrates_real,
     writervideo = animation.FFMpegWriter(fps=framerate)
     anim.save(outfile_name, writer = writervideo)
 
-def plot_linear_outlet(graph, pred_states, real_states, coefs_dict, field_name, out_index):
-
-    fig, ax = plt.subplots(1)
-
-    outedges = graph.edges['out_to_inner'].data['edges']
-    outedgesind = np.where(outedges[:,0] == out_index)[0]
-
-    B = np.expand_dims(graph.edges['out_to_inner'].data['physical_contiguous'],axis=1)
-    aggr = np.concatenate((graph.edges['out_to_inner'].data['edges'],B),axis=1)
-
-    physical_contiguous = aggr[outedgesind]
-    indnext = physical_contiguous[np.where(physical_contiguous[:,2] == 1)[0],1]
-
-    edges = graph.edges['inner_to_inner'].data['edges'].detach().numpy()
-    ntype = graph.nodes['inner'].data['node_type'].detach().numpy()
-    nodes = graph.nodes['inner'].data['x'].detach().numpy()
-
-    node_selector = [indnext[0]]
-    stop = False
-    while not stop:
-        next = edges[np.where(edges[:,0] == node_selector[-1])[0],1].tolist()
-        for ns in node_selector:
-            if ns in next:
-                next.remove(ns)
-        if len(next) > 1:
-            stop = True
-            break
-        if len(next) == 0:
-            print('hello')
-        node_selector.append(next[0])
-
-    node_selector.reverse()
-
-    dists = np.zeros((len(node_selector) + 1))
-
-    for i in range(1,len(node_selector)):
-        dists[i] = dists[i-1] + np.linalg.norm(nodes[node_selector[i],:]-nodes[node_selector[i-1],:])
-
-    dists[-1] = dists[-2] + np.linalg.norm(nodes[node_selector[-1],:]-graph.nodes['outlet'].data['x'][out_index].detach().numpy())
-
-    pred_field = np.concatenate((pred_states[field_name]['inner'].detach().numpy()[node_selector,0],
-                                 np.reshape(pred_states[field_name]['outlet'][out_index].detach().numpy(),(1))),axis=0)
-    real_field = np.concatenate((real_states[field_name]['inner'].detach().numpy()[node_selector,0],
-                                 np.reshape(pred_states[field_name]['outlet'][out_index].detach().numpy(),(1))),axis=0)
-
-    pred_field = pp.invert_normalize_function(pred_field, field_name, coefs_dict)
-    real_field = pp.invert_normalize_function(real_field, field_name, coefs_dict)
-
-    line_pred, = ax.plot(dists,pred_field,'r')
-    line_real, = ax.plot(dists,real_field,'--b')
-
-    ax.set_xlim(0,dists[-1])
-    ax.set_ylim(coefs_dict[field_name]['min'],coefs_dict[field_name]['max'])
-
-    return fig, ax, line_pred, line_real, node_selector
-
 def plot_3D(model_name, states, times,
-            coefs_dict, field_name, outfile_name, time, framerate = 60):
+            coefs_dict, bounds, field_name, outfile_name, time, framerate = 60):
 
     nframes = time * framerate
     indices = np.floor(np.linspace(0,len(states)-1,nframes)).astype(int)
@@ -368,7 +312,7 @@ def plot_3D(model_name, states, times,
     graph = pp.load_graphs('../graphs/data/' + model_name + '.grph')[0][0]
 
     cmap = cm.get_cmap("viridis")
-    fig, ax, points = plot_3D_graph(graph, states[0], coefs_dict, field_name, cmap)
+    fig, ax, points = plot_3D_graph(graph, states[0], coefs_dict, bounds, field_name, cmap)
 
     angles = np.floor(np.linspace(0,360,len(states))).astype(int)
 
@@ -481,7 +425,6 @@ def plot_static(graph, pressures_pred, flowrates_pred, pressures_real, flowrates
     color = iter(cmap(np.linspace(0, 1, npoints)))
     for i in range(len(idxs)):
         c = next(color)
-        print(idxs[i])
         ax.scatter(x[idxs[i],0], x[idxs[i],1], x[idxs[i],2], color=c, depthshade=0, s = 14)
 
     minx = np.min(x, axis=0)

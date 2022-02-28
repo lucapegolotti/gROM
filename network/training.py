@@ -38,7 +38,10 @@ def evaluate_model(gnn_model, train_dataloader, loss, metric = None,
                    optimizer = None, continuity_coeff = 0.0,
                    validation_dataloader = None):
 
-    average_flowrate = gnn_model.params['average_flowrate_training']
+    try:
+        average_flowrate = gnn_model.module.params['average_flowrate_training']
+    except AttributeError:
+        average_flowrate = gnn_model.params['average_flowrate_training']
     label_coefs = train_dataloader.dataloader.dataset.label_coefs
     coefs_dict = train_dataloader.dataloader.dataset.coefs_dict
 
@@ -125,7 +128,7 @@ def train_gnn_model(gnn_model, train, validation, optimizer_name, train_params,
     try:
         gnn_model.module.set_normalization_coefs(coefs_dict)
         train_sampler = DistributedSampler(train_dataset, num_replicas=dist.get_world_size(), rank=dist.get_rank())
-        validation_sampler = DistributedSampler(validation_sampler, num_replicas=dist.get_world_size(), rank=dist.get_rank())
+        validation_sampler = DistributedSampler(validation_dataset, num_replicas=dist.get_world_size(), rank=dist.get_rank())
     except AttributeError:
         gnn_model.set_normalization_coefs(coefs_dict)
         num_examples = len(train_dataset)
@@ -243,8 +246,17 @@ def prepare_dataset(dataset_json):
 def launch_training(dataset_json, optimizer_name, params_dict,
                     train_params, plot_validation = True, checkpoint_fct = None,
                     dataset_params = None):
+    def save_model(filename):
+        try:
+            # we call the method on .module because otherwise the pms file
+            # cannot be read serially
+            torch.save(gnn_model.module.state_dict(), folder + '/trained_gnn.pms')
+        except AttributeError:
+            torch.save(gnn_model.state_dict(), folder + '/trained_gnn.pms')
+
     now = datetime.now()
     train, validation, test = prepare_dataset(dataset_json)
+    print(train)
     gnn_model = generate_gnn_model(params_dict)
     save_data = True
     # check if MPI is supported
@@ -256,7 +268,9 @@ def launch_training(dataset_json, optimizer_name, params_dict,
     folder = 'models/' + now.strftime("%d.%m.%Y_%H.%M.%S")
     if save_data:
         pathlib.Path(folder).mkdir(parents=True, exist_ok=True)
-        torch.save(gnn_model.state_dict(), folder + '/initial_gnn.pms')
+        if save_data:
+            save_model(folder + '/initial_gnn.pms')
+
     gnn_model, train_loader, loss, mae, coefs_dict, dataset = train_gnn_model(gnn_model,
                                                                               train,
                                                                               validation,
@@ -268,7 +282,7 @@ def launch_training(dataset_json, optimizer_name, params_dict,
     split = {'train': train.tolist(), 'validation': validation.tolist(), 'test': test.tolist()}
 
     if save_data:
-        torch.save(gnn_model.state_dict(), folder + '/trained_gnn.pms')
+        save_model(folder + '/trained_gnn.pms')
 
     dataset_params['split'] = split
 
@@ -311,7 +325,7 @@ if __name__ == "__main__":
     #                'hl_mlp': 1,
     #                'normalize': 1,
     #                'average_flowrate_training': 0}
-    params_dict = {'infeat_nodes': 13,
+    params_dict = {'infeat_nodes': 23,
                    'infeat_edges': 4,
                    'latent_size_gnn': 8,
                    'latent_size_mlp': 32,

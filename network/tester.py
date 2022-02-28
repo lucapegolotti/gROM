@@ -22,6 +22,7 @@ import json
 import training
 import plot_tools as ptools
 import matplotlib.cm as cm
+import shutil
 
 def test_train(gnn_model, model_name, dataset):
     num_examples = len(dataset)
@@ -41,13 +42,8 @@ def test_train(gnn_model, model_name, dataset):
 
     return coefs_dict
 
-def get_mask(graph,node_type):
-    return np.squeeze(graph.nodes[node_type].data['global_mask'].detach().numpy())
-
 def get_color_nodes(graph, cmap = cm.get_cmap("plasma")):
-    nnodes = graph.nodes['inner'].data['global_mask'].shape[0] + \
-             graph.nodes['inlet'].data['global_mask'].shape[0] + \
-             graph.nodes['outlet'].data['global_mask'].shape[0]
+    nnodes = graph.nodes['inner'].data['x'].shape[0]
 
     color_node = np.zeros((nnodes,4))
     node_type = graph.nodes['inner'].data['node_type'].detach().numpy()
@@ -57,38 +53,35 @@ def get_color_nodes(graph, cmap = cm.get_cmap("plasma")):
     for i in range(node_type.shape[0]):
         colors[i] = np.where(node_type[i,:] == 1)[0]
 
-    inner_node_type = np.copy(colors)
+    node_type = np.copy(colors)
 
     colors = colors / np.max(colors)
 
-    color_node[get_mask(graph,'inner')] = cmap(colors)
-    color_node[get_mask(graph,'inlet')] = np.array([1,0,0,1])
-    color_node[get_mask(graph,'outlet')] = np.array([0,1,0,1])
 
-    node_type = np.zeros((nnodes,))
-    node_type[get_mask(graph,'inner')] = inner_node_type
-    node_type[get_mask(graph,'inlet')] = -1
-    node_type[get_mask(graph,'outlet')] = -2
+    color_node = cmap(colors)
+    color_node[graph.nodes['inlet'].data['mask']] = np.array([1,0,0,1])
+    color_node[graph.nodes['outlet'].data['mask']] = np.array([0,1,0,1])
 
     return color_node, node_type
 
 def get_solution_all_nodes(state, graph):
-
-    nnodes = state['pressure']['inner'].shape[0] + \
-             state['pressure']['inlet'].shape[0] + \
-             state['pressure']['outlet'].shape[0]
-
-    pressure = np.zeros((nnodes,1))
-    pressure[get_mask(graph,'inlet')] = state['pressure']['inlet']
-    pressure[get_mask(graph,'inner')] = state['pressure']['inner']
-    pressure[get_mask(graph,'outlet')] = state['pressure']['outlet']
-
-    flowrate = np.zeros((nnodes,1))
-    flowrate[get_mask(graph,'inlet')] = state['flowrate']['inlet']
-    flowrate[get_mask(graph,'inner')] = state['flowrate']['inner']
-    flowrate[get_mask(graph,'outlet')] = state['flowrate']['outlet']
+    pressure = state['pressure']['inner'].detach().numpy()
+    flowrate = state['flowrate']['inner'].detach().numpy()
 
     return pressure, flowrate
+
+def compute_min_max_list(tlist, field_name, coefs):
+    mm = np.infty
+    MM = np.NINF
+
+    for el in tlist:
+        mm = np.min([np.min(el), mm])
+        MM = np.max([np.max(el), MM])
+
+    mm = pp.invert_normalize_function(mm, field_name, coefs)
+    MM = pp.invert_normalize_function(MM, field_name, coefs)
+
+    return {'min': mm, 'max': MM}
 
 def test_rollout(model, params, dataset, index_graph, split, out_folder):
     graph = dataset.lightgraphs[index_graph]
@@ -239,30 +232,35 @@ def test_rollout(model, params, dataset, index_graph, split, out_folder):
 
     color_nodes, nodes_type = get_color_nodes(graph, cmap = cm.get_cmap("plasma"))
 
+    bounds = {'pressure': compute_min_max_list(pressures_real, 'pressure', coefs_dict),
+              'flowrate': compute_min_max_list(flowrates_real, 'flowrate', coefs_dict)}
+
     ptools.plot_static(graph, pressures_pred, flowrates_pred, pressures_real, flowrates_real,
                        graph.nodes['params'].data['times'].detach().numpy(),
                        coefs_dict, nodes_type, npoints=3, outdir=out_folder)
 
-    ptools.plot_3D(model_name, pred_states, graph.nodes['params'].data['times'].detach().numpy(),
-                    coefs_dict, 'pressure', outfile_name=out_folder + '/3d_pressure_pred.mp4',
-                    time = 5)
+    print3D = False
+    if print3D:
+        ptools.plot_3D(model_name, pred_states, graph.nodes['params'].data['times'].detach().numpy(),
+                        coefs_dict, bounds, 'pressure', outfile_name=out_folder + '/3d_pressure_pred.mp4',
+                        time = 5)
 
-    ptools.plot_3D(model_name, real_states, graph.nodes['params'].data['times'].detach().numpy(),
-                    coefs_dict, 'pressure', outfile_name=out_folder + '/3d_pressure_real.mp4',
-                    time = 5)
+        ptools.plot_3D(model_name, real_states, graph.nodes['params'].data['times'].detach().numpy(),
+                        coefs_dict, bounds, 'pressure', outfile_name=out_folder + '/3d_pressure_real.mp4',
+                        time = 5)
 
-    ptools.plot_3D(model_name, pred_states, graph.nodes['params'].data['times'].detach().numpy(),
-                    coefs_dict, 'flowrate', outfile_name=out_folder + '/3d_flowrate_pred.mp4',
-                    time = 5)
+        ptools.plot_3D(model_name, pred_states, graph.nodes['params'].data['times'].detach().numpy(),
+                        coefs_dict, bounds, 'flowrate', outfile_name=out_folder + '/3d_flowrate_pred.mp4',
+                        time = 5)
 
-    ptools.plot_3D(model_name, real_states, graph.nodes['params'].data['times'].detach().numpy(),
-                    coefs_dict, 'flowrate', outfile_name=out_folder + '/3d_flowrate_real.mp4',
-                    time = 5)
+        ptools.plot_3D(model_name, real_states, graph.nodes['params'].data['times'].detach().numpy(),
+                        coefs_dict, bounds, 'flowrate', outfile_name=out_folder + '/3d_flowrate_real.mp4',
+                        time = 5)
 
     ptools.plot_linear(pressures_pred, flowrates_pred, pressures_real, flowrates_real,
                        color_nodes,
                        graph.nodes['params'].data['times'].detach().numpy(),
-                       coefs_dict, out_folder + '/linear.mp4', time = 5)
+                       coefs_dict, bounds, out_folder + '/linear.mp4', time = 5)
 
     ptools.plot_node_types(graph, out_folder + '/node_types.mp4', time = 5,
                            cmap = cm.get_cmap("plasma"))
@@ -278,7 +276,6 @@ if __name__ == "__main__":
     gnn_model.load_state_dict(torch.load(path + '/trained_gnn.pms'))
     gnn_model.eval()
 
-    training.create_directory('results_validation')
     num_validation = len(params['dataset_parameters']['split']['validation'])
 
     dataset = pp.generate_dataset(params['dataset_parameters']['split']['validation'],
@@ -287,14 +284,19 @@ if __name__ == "__main__":
 
     coefs_dict = dataset.coefs_dict
 
+    print('==========VALIDATION==========')
+    if os.path.exists('results_validation'):
+        shutil.rmtree('results_validation')
+    training.create_directory('results_validation')
     for i in range(num_validation):
-        training.create_directory('results_validation/' + str(i))
+        model_name = params['dataset_parameters']['split']['validation'][i]
+        print('model name = ' + model_name)
+        training.create_directory('results_validation/' + model_name)
         err_p, err_q, global_error = test_rollout(gnn_model, params,
                                                   dataset, index_graph = i,
                                                   split = 'validation',
-                                                  out_folder = 'results_validation/' + str(i))
+                                                  out_folder = 'results_validation/' + model_name)
 
-    training.create_directory('results_train')
     num_train = len(params['dataset_parameters']['split']['train'])
 
     dataset = pp.generate_dataset(params['dataset_parameters']['split']['train'],
@@ -302,9 +304,15 @@ if __name__ == "__main__":
                                   coefs_dict = params['normalization_coefficients']['features'])
     coefs_dict = dataset.coefs_dict
 
+    print('==========TRAIN==========')
+    if os.path.exists('results_train'):
+        shutil.rmtree('results_train')
+    training.create_directory('results_train')
     for i in range(num_train):
-        training.create_directory('results_train/' + str(i))
+        model_name = params['dataset_parameters']['split']['train'][i]
+        print('model name = ' + model_name)
+        training.create_directory('results_train/' + model_name)
         err_p, err_q, global_error = test_rollout(gnn_model, params,
                                                   dataset, index_graph = i,
                                                   split = 'train',
-                                                  out_folder = 'results_train/' + str(i))
+                                                  out_folder = 'results_train/' + model_name)
