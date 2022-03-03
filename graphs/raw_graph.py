@@ -6,7 +6,9 @@ import matplotlib.cm as cm
 
 class RawGraph:
     def __init__(self, points, params, debug = False):
-        self.points = points[::params['resample_original']]
+        self.points = points
+        self.resample_original(params['resample_original'], points)
+        self.points = points[self.resampled_indices , :]
         self.params = params
         self.debug = debug
 
@@ -17,6 +19,21 @@ class RawGraph:
         self.resample()
         self.find_connectivity()
         self.construct_interpolation_matrices()
+
+    def resample_original(self, coeff, points):
+        npoints = points.shape[0]
+
+        npoints_to_exclude = int(npoints - np.floor(npoints/coeff))
+
+        indices = np.arange(0, npoints)
+        for i in range(npoints_to_exclude):
+            diff = np.linalg.norm(points[indices[1:],:] - points[indices[:-1],:], axis = 1)
+            mindiff = np.min(diff)
+
+            idx = np.where(np.abs(diff - mindiff) < 1e-14)[0]
+            indices = np.delete(indices, idx)
+
+        self.resampled_indices = indices
 
     def find_connectivity(self):
         # find connectivity
@@ -49,6 +66,10 @@ class RawGraph:
 
         self.outlets = np.where(dists > self.params['tol'])[0]
 
+        if self.outlets[0] == self.inlet:
+            # remove inlet from outlets if necessary
+            self.outlets = np.delete(self.outlets, 0)
+
         # we assume last point is an outlet
         self.outlets = np.append(self.outlets, self.points.shape[0]-1)
         self.portions = self.partition(self.points)
@@ -61,7 +82,7 @@ class RawGraph:
 
             ax.scatter(self.points[:,0],
                        self.points[:,1],
-                       self.points[:,2], s = 0.5, color = 'black')
+                       self.points[:,2], s = 0.5)
 
             for i in self.outlets:
                 ax.scatter(self.points[i,0],
@@ -137,7 +158,6 @@ class RawGraph:
                 offset_out = points_to_remove
             slices.append(array[prev + offset_in:outlet+1 - offset_out,:])
             prev = outlet+1
-
         return slices
 
     def set_node_types(self, bifurcation_id):
@@ -231,24 +251,25 @@ class RawGraph:
             # find consecutive chunks
             idxs = np.where(curbid != 0)[0]
 
-            i1 = [idxs[0]]
-            i2 = []
-            for j in range(len(idxs)-2):
-                if idxs[j] + 1 != idxs[j+1]:
-                    i2.append(idxs[j])
-                    i1.append(idxs[j+1])
+            if len(idxs > 0):
+                i1 = [idxs[0]]
+                i2 = []
+                for j in range(len(idxs)-2):
+                    if idxs[j] + 1 != idxs[j+1]:
+                        i2.append(idxs[j])
+                        i1.append(idxs[j+1])
 
-            i2.append(idxs[len(idxs)-1])
+                i2.append(idxs[len(idxs)-1])
 
-            # set chunk to most common value
-            for chunki in range(len(i1)):
-                cv = np.bincount(curbid[i1[chunki]:i2[chunki]+1]).argmax()
-                bid[i][i1[chunki]:i2[chunki]+1] = cv
+                # set chunk to most common value
+                for chunki in range(len(i1)):
+                    cv = np.bincount(curbid[i1[chunki]:i2[chunki]+1]).argmax()
+                    bid[i][i1[chunki]:i2[chunki]+1] = cv
 
         self.nodes_type = bid
 
     def project(self, field):
-        field = field[::self.params['resample_original']]
+        field = field[self.resampled_indices]
         proj_field = []
         sliced_field = self.partition(field)
 
@@ -258,9 +279,9 @@ class RawGraph:
             weights = np.linalg.solve(self.interpolation_matrices[ifield],
                                       sliced_field[ifield])
             if weights[0] != weights[0]:
-                msg = "Interpolation weights became nan. Maybe points in \
-                       original geometry were too close. Try increasing the \
-                       resample_original parameter for this geometry."
+                msg = "Interpolation weights became nan. Maybe points in " + \
+                      "original geometry were too close. Try increasing the " + \
+                      "resample_original parameter for this geometry."
                 raise ValueError(msg)
             proj_values = np.matmul(self.projection_matrices[ifield], weights)
             proj_field.append(proj_values)
@@ -278,7 +299,7 @@ class RawGraph:
                 fig = plt.figure()
                 ax = plt.axes()
 
-                ax.scatter(s, sliced_field[ifield],color='black')
+                ax.scatter(s, sliced_field[ifield], color='black')
                 ax.scatter(s1, proj_values, s = 0.5, color='red')
 
                 plt.show()
@@ -516,22 +537,38 @@ class RawGraph:
         bifurcation_id = self.create_homogeneous_graph()
 
         nnodes = nodes.shape[0]
+        branch_mask = np.where(nodes_type == 0)[0]
+        junct_mask = np.where(nodes_type != 0)[0]
+
+        nbranch_nodes = branch_mask.size
+        njunct_nodes = junct_mask.size
 
         # duplicate inlet
-        x = np.expand_dims(nodes[inlet_index,:],axis=0)
+        x = np.expand_dims(nodes[inlet_index,:], axis=0)
         distances_inlet, _ = dijkstra_algorithm(nodes, edges, inlet_index)
-        inlet_edges = np.zeros((nnodes,2))
-        inlet_edges[:,1] = np.arange(nnodes)
+        distances_inlet_branch = distances_inlet[branch_mask]
+        distances_inlet_junct = distances_inlet[junct_mask]
+
+        inlet_edges_branch = np.zeros((nbranch_nodes,2))
+        inlet_edges_branch[:,1] = np.arange(nbranch_nodes)
+        inlet_edges_junct = np.zeros((njunct_nodes,2))
+        inlet_edges_junct[:,1] = np.arange(njunct_nodes)
+
         inlet_physical_contiguous = np.zeros(nnodes)
         inlet_physical_contiguous[inlet_index] = 1
+        inlet_physical_contiguous_branch = inlet_physical_contiguous[branch_mask]
+        inlet_physical_contiguous_junct = inlet_physical_contiguous[junct_mask]
 
         map_inlet = {inlet_index: 0}
 
-        inlet_dict = {'edges': inlet_edges.astype(int), \
-                      'distance': distances_inlet, \
+        inlet_dict = {'edges_branch': inlet_edges_branch.astype(int),
+                      'edges_junct': inlet_edges_junct.astype(int), \
+                      'distance_branch': distances_inlet_branch, \
+                      'distance_junct': distances_inlet_junct, \
                       'x': np.expand_dims(nodes[inlet_index,:],axis=0), \
                       'mask': np.array([inlet_index]),
-                      'physical_same': inlet_physical_contiguous.astype(int)}
+                      'physical_same_branch': inlet_physical_contiguous_branch.astype(int),
+                      'physical_same_junct': inlet_physical_contiguous_junct.astype(int)}
 
         # duplicate outlets
         x = nodes[outlet_indices,:]
@@ -541,7 +578,8 @@ class RawGraph:
         map_outlet = {}
         for out_index in range(len(outlet_indices)):
             map_outlet[outlet_indices[out_index]] = out_index
-            curoutedge = np.copy(inlet_edges)
+            curoutedge = np.zeros((nnodes,2))
+            curoutedge[:,1] = np.arange(0, nnodes)
             curoutedge[:,0] = out_index
             outlet_edges = np.concatenate((outlet_edges, curoutedge), axis = 0)
             curdistances, _ = dijkstra_algorithm(nodes, edges,\
@@ -564,25 +602,120 @@ class RawGraph:
                     added = True
                     single_connection_mask.append(int(idx))
 
-        outlet_dict = {'edges': outlet_edges[single_connection_mask,:].astype(int), \
-                       'distance': distances_outlets[single_connection_mask], \
+        outlet_edges = outlet_edges[single_connection_mask,:]
+        outlet_edges_branch = outlet_edges[branch_mask, :]
+        outlet_edges_branch[:,1] = np.arange(0, nbranch_nodes)
+        outlet_edges_junct = outlet_edges[junct_mask, :]
+        outlet_edges_junct[:,1] = np.arange(0, njunct_nodes)
+
+        distances_outlets = distances_outlets[single_connection_mask]
+        distances_outlets_branch = distances_outlets[branch_mask]
+        distances_outlets_junct = distances_outlets[junct_mask]
+
+        outlet_physical_contiguous = outlet_physical_contiguous[single_connection_mask]
+        outlet_physical_contiguous_branch = outlet_physical_contiguous[branch_mask]
+        outlet_physical_contiguous_junct = outlet_physical_contiguous[junct_mask]
+
+        outlet_dict = {'edges_branch': outlet_edges_branch.astype(int), \
+                       'edges_junct': outlet_edges_junct.astype(int), \
+                       'distance_branch': distances_outlets_branch, \
+                       'distance_junct': distances_outlets_junct, \
                        'x': nodes[outlet_indices,:], \
                        'mask': np.array(outlet_indices), \
-                       'physical_same': \
-                        outlet_physical_contiguous[single_connection_mask].astype(int)}
+                       'physical_same_branch': outlet_physical_contiguous_branch, \
+                       'physical_same_junct': outlet_physical_contiguous_junct}
 
+        edges_b2b = []
+        edges_j2j = []
+        edges_b2j = []
+        edges_j2b = []
+
+        branch_mask_list = branch_mask.tolist()
+        junct_mask_list = junct_mask.tolist()
+
+        branch_map = {}
+        count = 0
+        for ib in branch_mask_list:
+            branch_map[ib] = count
+            count = count + 1
+
+        junct_map = {}
+        count = 0
+        for ij in junct_mask_list:
+            junct_map[ij] = count
+            count = count + 1
+
+        for edge in edges:
+            if edge[0] in branch_mask_list and edge[1] in branch_mask_list:
+                edges_b2b.append([branch_map[edge[0]], branch_map[edge[1]]])
+            elif edge[0] in junct_mask_list and edge[1] in junct_mask_list:
+                edges_j2j.append([junct_map[edge[0]], junct_map[edge[1]]])
+            else:
+                if edge[0] in branch_mask_list:
+                    e0 = edge[0]
+                if edge[1] in branch_mask_list:
+                    e0 = edge[1]
+                if edge[0] in junct_mask_list:
+                    e1 = edge[0]
+                if edge[1] in junct_mask_list:
+                    e1 = edge[1]
+
+                edges_b2j.append([branch_map[e0], junct_map[e1]])
+
+        edges_b2b = np.array(edges_b2b)
         # make it bidirectional
-        edges = np.concatenate((edges,np.array([edges[:,1],edges[:,0]]).transpose()),axis = 0)
+        edges_b2b = np.concatenate((edges_b2b,np.array([edges_b2b[:,1],edges_b2b[:,0]]).transpose()),axis = 0)
 
-        nedges = edges.shape[0]
-        pos = np.zeros((nedges, 4))
-        for iedg in range(nedges):
-            pos[iedg,0:3] = nodes[edges[iedg,1],:] - nodes[edges[iedg,0],:]
-            pos[iedg,3] = np.linalg.norm(pos[iedg,0:2])
+        edges_j2j = np.array(edges_j2j)
+        # make it bidirectional
+        edges_j2j = np.concatenate((edges_j2j,np.array([edges_j2j[:,1],edges_j2j[:,0]]).transpose()),axis = 0)
 
-        nodes_dict = {'edges': edges, 'position': pos, 'x': nodes,
-                      'node_type': nodes_type,
-                      'tangent': tangents}
+        edges_b2j = np.array(edges_b2j)
+        edges_j2b = np.array([edges_b2j[:,1],edges_b2j[:,0]]).transpose()
+
+        nodes_branch = nodes[branch_mask,:]
+        nodes_junct = nodes[junct_mask,:]
+
+        nedges_b2b = edges_b2b.shape[0]
+        pos_b2b = np.zeros((nedges_b2b, 4))
+        for iedg in range(nedges_b2b):
+            pos_b2b[iedg,0:3] = nodes_branch[edges_b2b[iedg,1],:] - nodes_branch[edges_b2b[iedg,0],:]
+            pos_b2b[iedg,3] = np.linalg.norm(pos_b2b[iedg,0:2])
+
+        nedges_j2j = edges_j2j.shape[0]
+        pos_j2j = np.zeros((nedges_j2j, 4))
+        for iedg in range(nedges_j2j):
+            pos_j2j[iedg,0:3] = nodes_junct[edges_j2j[iedg,1],:] - nodes_junct[edges_j2j[iedg,0],:]
+            pos_j2j[iedg,3] = np.linalg.norm(pos_j2j[iedg,0:2])
+
+        nedges_b2j = edges_b2j.shape[0]
+        pos_b2j = np.zeros((nedges_b2j, 4))
+        for iedg in range(nedges_b2j):
+            pos_b2j[iedg,0:3] = nodes_junct[edges_b2j[iedg,1],:] - nodes_branch[edges_b2j[iedg,0],:]
+            pos_b2j[iedg,3] = np.linalg.norm(pos_b2j[iedg,0:2])
+
+        pos_j2b = pos_b2j
+        pos_j2b[0:3] = -pos_j2b[0:3]
+
+        tangents_branch = tangents[branch_mask,:]
+
+        branch_dict = {'edges': edges_b2b,
+                       'pos': pos_b2b,
+                       'x': nodes_branch,
+                       'tangent': tangents_branch,
+                       'branch_to_junct': edges_b2j,
+                       'pos_branch_to_junct': pos_b2j,
+                       'mask': branch_mask}
+
+        tangents_junct = tangents[junct_mask,:]
+        junct_dict = {'edges': edges_j2j,
+                      'pos': pos_j2j,
+                      'x': nodes_junct,
+                      'tangent': tangents_junct,
+                      'junct_to_branch': edges_j2b,
+                      'pos_junct_to_branch': pos_j2b,
+                      'node_type': nodes_type[junct_mask],
+                      'mask': junct_mask}
 
         # let's find macro nodes and connectivity
         macro_nodes = np.ones(nnodes) * (-1)
@@ -645,21 +778,25 @@ class RawGraph:
                 elif outfl[0] == 'outlet':
                     outlet_to_junction_negative.append([int(map_outlet[outfl[1]]), bif_id])
 
-        inner_to_macro = np.array(inner_to_macro)
-        macro_to_inner = np.array([inner_to_macro[:,1], inner_to_macro[:,0]]).transpose()
+        branch_to_macro = np.array(inner_to_macro)
+        # convert indices to global to braches
+        for i in range(branch_to_macro.shape[0]):
+            branch_to_macro[i,0] = branch_map[branch_to_macro[i,0]]
+
+        macro_to_branch = np.array([branch_to_macro[:,1], branch_to_macro[:,0]]).transpose()
         inlet_to_junction_positive = np.array(inlet_to_junction_positive)
         macro_to_junction_positive = np.array(macro_to_junction_positive)
         outlet_to_junction_negative = np.array(outlet_to_junction_negative)
         macro_to_junction_negative = np.array(macro_to_junction_negative)
 
-        macro_structure = {'inner_to_macro': inner_to_macro,
-                           'macro_to_inner': macro_to_inner,
+        macro_structure = {'branch_to_macro': branch_to_macro,
+                           'macro_to_branch': macro_to_branch,
                            'macro_to_junction_positive': macro_to_junction_positive,
                            'macro_to_junction_negative': macro_to_junction_negative,
                            'inlet_to_junction_positive': inlet_to_junction_positive,
                            'outlet_to_junction_negative': outlet_to_junction_negative}
 
-        return nodes_dict, inlet_dict, outlet_dict, macro_structure
+        return branch_dict, junct_dict, inlet_dict, outlet_dict, macro_structure
 
     def show(self):
         fig = plt.figure()
