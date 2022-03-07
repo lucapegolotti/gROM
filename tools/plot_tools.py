@@ -112,7 +112,7 @@ def plot_3D_graph(graph, state = None, coefs = None, bounds = None, field_name =
 
     return fig, ax, scatterpts
 
-def plot_node_types(graph, outfile_name = None, time = 5, cmap = cm.get_cmap("viridis")):
+def plot_node_types(graph, color_nodes, outfile_name = None, time = 5):
     framerate = 60
     nframes = time * framerate
     fig = plt.figure(figsize=(8, 8), dpi=284)
@@ -120,29 +120,11 @@ def plot_node_types(graph, outfile_name = None, time = 5, cmap = cm.get_cmap("vi
     ax = plt.axes(projection='3d')
     ax._axis3don = False
 
-    node_types = graph.nodes['inner'].data['node_type'].detach().numpy()
-
-    colors = np.zeros((node_types.shape[0]))
-
-    for i in range(node_types.shape[0]):
-        colors[i] = np.where(node_types[i,:] == 1)[0]
-
-    colors = colors / np.max(colors)
-
-    scatterpts = None
-    # plot inlet
-    xin = graph.nodes['inlet'].data['x'].detach().numpy()
-    ax.scatter(xin[:,0], xin[:,1], xin[:,2], color='red', depthshade=0)
-
-    # plot outlet
-    xout = graph.nodes['outlet'].data['x'].detach().numpy()
-    ax.scatter(xout[:,0], xout[:,1], xout[:,2], color='green', depthshade=0)
-
     # plot inner
-    xinner = graph.nodes['inner'].data['x'].detach().numpy()
-    ax.scatter(xinner[:,0], xinner[:,1], xinner[:,2], color=cmap(colors), depthshade=0)
-
-    x = np.concatenate((xin,xout,xinner),axis=0)
+    xbranch = graph.nodes['branch'].data['x'].detach().numpy()
+    xjunct = graph.nodes['junction'].data['x'].detach().numpy()
+    x = np.concatenate((xbranch, xjunct), axis = 0)
+    ax.scatter(x[:,0], x[:,1], x[:,2], color=color_nodes, depthshade=0)
 
     minx = np.min(x, axis=0)
     maxx = np.max(x, axis=0)
@@ -228,11 +210,14 @@ def plot_geo_with_circles(graph,cmap = cm.get_cmap("viridis")):
     ax.set_ylim((minx[1],maxx[1]))
     ax.set_zlim((minx[2],maxx[2]))
 
-def plot_linear(pressures_pred, flowrates_pred, pressures_real, flowrates_real,
+def plot_linear(pressures_branch_pred, flowrates_branch_pred,
+                pressures_junction_pred, flowrates_junction_pred,
+                pressures_branch_real, flowrates_branch_real,
+                pressures_junction_real, flowrates_junction_real,
                 colors, times, coefs_dict, bounds, outfile_name, time, framerate = 60):
 
     nframes = time * framerate
-    indices = np.floor(np.linspace(0,len(pressures_pred)-1,nframes)).astype(int)
+    indices = np.floor(np.linspace(0,len(pressures_branch_pred)-1,nframes)).astype(int)
 
     selected_times = []
     selected_pred_pressure = []
@@ -240,10 +225,14 @@ def plot_linear(pressures_pred, flowrates_pred, pressures_real, flowrates_real,
     selected_pred_flowrate = []
     selected_real_flowrate = []
     for ind in indices:
-        selected_pred_pressure.append(pressures_pred[ind])
-        selected_real_pressure.append(pressures_real[ind])
-        selected_pred_flowrate.append(flowrates_pred[ind])
-        selected_real_flowrate.append(flowrates_real[ind])
+        selected_pred_pressure.append(np.concatenate((pressures_branch_pred[ind],
+                                      pressures_junction_pred[ind]), axis=0))
+        selected_real_pressure.append(np.concatenate((pressures_branch_real[ind],
+                                      pressures_junction_real[ind]), axis=0))
+        selected_pred_flowrate.append(np.concatenate((flowrates_branch_pred[ind],
+                                      flowrates_junction_pred[ind]), axis=0))
+        selected_real_flowrate.append(np.concatenate((flowrates_branch_real[ind],
+                                      flowrates_junction_real[ind]), axis=0))
         selected_times.append(times[0,ind])
 
     pressures_pred = selected_pred_pressure
@@ -256,13 +245,20 @@ def plot_linear(pressures_pred, flowrates_pred, pressures_real, flowrates_real,
     fig, ax = plt.subplots(2, dpi=284)
 
     scatter_real_p = ax[0].scatter(range(0,nnodes), \
-                                   pp.invert_normalize_function(pressures_real[0],'pressure',coefs_dict) / 1333.2, color='black', s = 1.5, alpha = 0.3)
+                                   pp.invert_normalize_function(pressures_real[0], \
+                                   'pressure',coefs_dict) / 1333.2, color='black', \
+                                   s = 1.5, alpha = 0.3)
     scatter_pred_p = ax[0].scatter(range(0,nnodes), \
-                                   pp.invert_normalize_function(pressures_pred[0],'pressure',coefs_dict) / 1333.2, color=colors, s = 1)
+                                   pp.invert_normalize_function(pressures_pred[0], \
+                                   'pressure',coefs_dict) / 1333.2, color=colors, \
+                                   s = 1)
     scatter_real_q = ax[1].scatter(range(0,nnodes), \
-                                   pp.invert_normalize_function(flowrates_real[0],'flowrate',coefs_dict), color='black', s = 1.5, alpha = 0.3)
+                                   pp.invert_normalize_function(flowrates_real[0], \
+                                   'flowrate',coefs_dict),
+                                   color='black', s = 1.5, alpha = 0.3)
     scatter_pred_q = ax[1].scatter(range(0,nnodes), \
-                                   pp.invert_normalize_function(flowrates_pred[0],'flowrate',coefs_dict), color=colors, s = 1)
+                                   pp.invert_normalize_function(flowrates_pred[0], \
+                                   'flowrate',coefs_dict), color=colors, s = 1)
 
     nodesidxs = np.expand_dims(np.arange(nnodes),axis=1)
     ax[1].set_xlabel('graph node index')
@@ -338,47 +334,28 @@ def plot_3D(model_name, states, times,
     writervideo = animation.FFMpegWriter(fps=framerate, bitrate=-1)
     anim.save(outfile_name, writer = writervideo)
 
-def plot_static(graph, pressures_pred, flowrates_pred, pressures_real, flowrates_real,
-                times, coefs_dict, nodes_type, npoints, outdir):
+def plot_static(graph, pressures_branch_pred, flowrates_branch_pred,
+                pressures_branch_real, flowrates_branch_real,
+                times, coefs_dict, npoints, outdir):
     # randomly sample one point per portion
-
-    field_name = 'pressure'
-
     fig = plt.figure()
     ax = plt.axes()
-    ranges = []
-    in_portion = False
-    count = 0
-    for i in nodes_type:
-        if i == 0:
-            if not in_portion:
-                first = count
-                in_portion = True
-        if i != 0:
-            if in_portion:
-                second = count
-                in_portion = False
-                ranges.append([int(first), int(second)])
-        count = count + 1
 
-    idxs = []
-    for rr in ranges:
-        idxs.append(random.sample(list(range(rr[0],rr[1])),1)[0])
-
-    idxs = random.sample(idxs, npoints)
+    idxs = np.arange(pressures_branch_pred[0].shape[0])
+    idxs = random.sample(idxs.tolist(), npoints)
 
     pred_p = []
     pred_q = []
     real_p = []
     real_q = []
     for i in range(times.size):
-        p = pp.invert_normalize_function(pressures_pred[i],'pressure',coefs_dict) / 1333.2
+        p = pp.invert_normalize_function(pressures_branch_pred[i],'pressure',coefs_dict) / 1333.2
         pred_p.append(p[idxs,0])
-        p = pp.invert_normalize_function(pressures_real[i],'pressure',coefs_dict) / 1333.2
+        p = pp.invert_normalize_function(pressures_branch_real[i],'pressure',coefs_dict) / 1333.2
         real_p.append(p[idxs,0])
-        q = pp.invert_normalize_function(flowrates_pred[i],'flowrate',coefs_dict)
+        q = pp.invert_normalize_function(flowrates_branch_pred[i],'flowrate',coefs_dict)
         pred_q.append(q[idxs,0])
-        q = pp.invert_normalize_function(flowrates_real[i],'flowrate',coefs_dict)
+        q = pp.invert_normalize_function(flowrates_branch_real[i],'flowrate',coefs_dict)
         real_q.append(q[idxs,0])
 
     cmap = cm.get_cmap("cool")
@@ -416,9 +393,10 @@ def plot_static(graph, pressures_pred, flowrates_pred, pressures_real, flowrates
 
     xin = graph.nodes['inlet'].data['x'].detach().numpy()
     xout = graph.nodes['outlet'].data['x'].detach().numpy()
-    xinner = graph.nodes['inner'].data['x'].detach().numpy()
+    xbranch = graph.nodes['branch'].data['x'].detach().numpy()
+    xjunction = graph.nodes['junction'].data['x'].detach().numpy()
 
-    x = np.concatenate((xin,xout,xinner),axis=0)
+    x = np.concatenate((xin,xout,xbranch,xjunction),axis=0)
 
     ax.scatter(x[:,0], x[:,1], x[:,2], color='black', depthshade=0, s = 0.5)
 

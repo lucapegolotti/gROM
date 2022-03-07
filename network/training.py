@@ -51,29 +51,34 @@ def evaluate_model(gnn_model, train_dataloader, loss, metric = None,
         count = 0
         c_loss_global = 0
         for batched_graph in dataloader:
-            pred = gnn_model(batched_graph,
-                             batched_graph.nodes['inner'].data['n_features'].float()).squeeze()
+            pred_branch, pred_junction = gnn_model(batched_graph, \
+                                                   batched_graph.nodes['branch'].data['n_features'].float(), \
+                                                   batched_graph.nodes['junction'].data['n_features'].float())
+
+            pred_branch = pred_branch.squeeze()
+            pred_junction = pred_junction.squeeze()
+
+            pred = torch.cat((pred_branch, pred_junction), 0)
+            label = torch.cat((batched_graph.nodes['branch'].data['n_labels'].float(),
+                               batched_graph.nodes['junction'].data['n_labels'].float()), 0)
 
             try:
-                c_loss = gnn_model.module.compute_continuity_loss(batched_graph, pred, label_coefs, coefs_dict)
+                c_loss = gnn_model.module.compute_continuity_loss(batched_graph, pred_branch, pred_junction, label_coefs, coefs_dict)
             except AttributeError:
-                c_loss = gnn_model.compute_continuity_loss(batched_graph, pred, label_coefs, coefs_dict)
+                c_loss = gnn_model.compute_continuity_loss(batched_graph, pred_branch, pred_junction, label_coefs, coefs_dict)
 
             if continuity_coeff > 1e-5:
                 # real = gnn_model.compute_continuity_loss(batched_graph, batched_graph.nodes['inner'].data['n_labels'], label_coefs, coefs_dict)
                 # print(real)
-                loss_v = loss(pred, torch.reshape(batched_graph.nodes['inner'].data['n_labels'].float(),
-                              pred.shape)) + c_loss * continuity_coeff
+                loss_v = loss(pred, label) + c_loss * continuity_coeff
             else:
-                loss_v = loss(pred, torch.reshape(batched_graph.nodes['inner'].data['n_labels'].float(),
-                              pred.shape))
+                loss_v = loss(pred, label)
             c_loss_global = c_loss_global + c_loss
 
             global_loss = global_loss + loss_v.detach().numpy()
 
             if metric != None:
-                metric_v = metric(pred, torch.reshape(batched_graph.nodes['inner'].data['n_labels'].float(),
-                                  pred.shape))
+                metric_v = metric(pred, label)
 
                 global_metric = global_metric + metric_v.detach().numpy()
 
@@ -338,7 +343,7 @@ if __name__ == "__main__":
                     'weight_decay': 0.36984122162067234,
                     'momentum': 0.0,
                     'batch_size': 10,
-                    'nepochs': 200,
+                    'nepochs': 10,
                     'continuity_coeff': -3}
     dataset_params = {'normalization': 'standard',
                       'rate_noise': 60,

@@ -64,12 +64,6 @@ def get_color_nodes(graph, cmap = cm.get_cmap("plasma")):
 
     return color_node, node_type
 
-def get_solution_all_nodes(state, graph):
-    pressure = state['pressure']['inner'].detach().numpy()
-    flowrate = state['flowrate']['inner'].detach().numpy()
-
-    return pressure, flowrate
-
 def compute_min_max_list(tlist, field_name, coefs):
     mm = np.infty
     MM = np.NINF
@@ -82,6 +76,29 @@ def compute_min_max_list(tlist, field_name, coefs):
     MM = pp.invert_normalize_function(MM, field_name, coefs)
 
     return {'min': mm, 'max': MM}
+
+def get_color_nodes(graph, cmap = cm.get_cmap("plasma")):
+    nbranch = graph.nodes['branch'].data['x'].shape[0]
+    njunction = graph.nodes['junction'].data['x'].shape[0]
+
+    nnodes = nbranch + njunction
+
+    node_type = graph.nodes['junction'].data['node_type'].detach().numpy()
+    junction_colors = np.zeros((node_type.shape[0]))
+
+    for i in range(node_type.shape[0]):
+        junction_colors[i] = np.where(node_type[i,:] == 1)[0]
+
+
+    junction_colors = junction_colors / np.max(junction_colors)
+    junction_colors = cmap(junction_colors)
+
+    color_node = np.zeros((nnodes,4))
+    color_node = cmap(np.zeros(nbranch + njunction))
+    color_node[nbranch:,:] = junction_colors
+
+    return color_node
+
 
 def test_rollout(model, params, dataset, index_graph, split, out_folder):
     graph = dataset.lightgraphs[index_graph]
@@ -116,13 +133,17 @@ def test_rollout(model, params, dataset, index_graph, split, out_folder):
         def bring_to_range_q(flowrate):
             return flowrate
 
-    pressure_dict = {'inner': pp.normalize_function(true_graph.nodes['inner'].data['pressure_0'],
-                             'pressure', coefs_dict),
+    pressure_dict = {'branch': pp.normalize_function(true_graph.nodes['branch'].data['pressure_0'],
+                              'pressure', coefs_dict),
+                     'junction': pp.normalize_function(true_graph.nodes['junction'].data['pressure_0'],
+                              'pressure', coefs_dict),
                      'inlet': pp.normalize_function(true_graph.nodes['inlet'].data['pressure_0'],
                              'pressure', coefs_dict),
                      'outlet': pp.normalize_function(true_graph.nodes['outlet'].data['pressure_0'],
                              'pressure', coefs_dict)}
-    flowrate_dict = {'inner': pp.normalize_function(true_graph.nodes['inner'].data['flowrate_0'],
+    flowrate_dict = {'branch': pp.normalize_function(true_graph.nodes['branch'].data['flowrate_0'],
+                             'flowrate', coefs_dict),
+                     'junction': pp.normalize_function(true_graph.nodes['junction'].data['flowrate_0'],
                              'flowrate', coefs_dict),
                      'inlet': pp.normalize_function(true_graph.nodes['inlet'].data['flowrate_0'],
                              'flowrate', coefs_dict),
@@ -131,26 +152,39 @@ def test_rollout(model, params, dataset, index_graph, split, out_folder):
 
     new_state = {'pressure': pressure_dict, 'flowrate': flowrate_dict}
 
-    pressure_exact, flowrate_exact = get_solution_all_nodes(new_state, graph)
-    pressure_pred, flowrate_pred = get_solution_all_nodes(new_state, graph)
-
     err_p = 0
     err_q = 0
+    err_p_branch = 0
+    err_q_branch = 0
+    err_p_junction = 0
+    err_q_junction = 0
+
     norm_p = 0
     norm_q = 0
+    norm_p_branch = 0
+    norm_q_branch = 0
+    norm_p_junction = 0
+    norm_q_junction = 0
     pred_states = [new_state]
     real_states = [new_state]
-    pressures_pred = [pressure_pred]
-    pressures_real = [pressure_exact]
-    flowrates_pred = [flowrate_pred]
-    flowrates_real = [flowrate_exact]
+
+    pressures_branch_pred = [new_state['pressure']['branch'].detach().numpy()]
+    pressures_junction_pred = [new_state['pressure']['junction'].detach().numpy()]
+    flowrates_branch_pred = [new_state['flowrate']['branch'].detach().numpy()]
+    flowrates_junction_pred = [new_state['flowrate']['junction'].detach().numpy()]
+    pressures_branch_real = [new_state['pressure']['branch'].detach().numpy()]
+    pressures_junction_real = [new_state['pressure']['junction'].detach().numpy()]
+    flowrates_branch_real = [new_state['flowrate']['branch'].detach().numpy()]
+    flowrates_junction_real = [new_state['flowrate']['junction'].detach().numpy()]
     start = time.time()
     c_loss_total = 0
     total_flowrate = 0
     for t in range(len(times)-1):
         tp1 = t+1
-        next_pressure = pp.normalize_function(true_graph.nodes['inner'].data['pressure_' + str(tp1)], 'pressure', coefs_dict)
-        next_flowrate = pp.normalize_function(true_graph.nodes['inner'].data['flowrate_' + str(tp1)], 'flowrate', coefs_dict)
+        next_pressure_branch = pp.normalize_function(true_graph.nodes['branch'].data['pressure_' + str(tp1)], 'pressure', coefs_dict)
+        next_flowrate_branch = pp.normalize_function(true_graph.nodes['branch'].data['flowrate_' + str(tp1)], 'flowrate', coefs_dict)
+        next_pressure_junction = pp.normalize_function(true_graph.nodes['junction'].data['pressure_' + str(tp1)], 'pressure', coefs_dict)
+        next_flowrate_junction = pp.normalize_function(true_graph.nodes['junction'].data['flowrate_' + str(tp1)], 'flowrate', coefs_dict)
 
         pressure_dict = {'inlet': pp.normalize_function(true_graph.nodes['inlet'].data['pressure_' + str(tp1)], 'pressure', coefs_dict),
                          'outlet': pp.normalize_function(true_graph.nodes['outlet'].data['pressure_' + str(tp1)], 'pressure', coefs_dict)}
@@ -163,56 +197,93 @@ def test_rollout(model, params, dataset, index_graph, split, out_folder):
         pp.set_state(graph, new_state)
 
         average_flowrate = True
-        pred = model(graph, graph.nodes['inner'].data['n_features'].float(),
-                     average_flowrate=average_flowrate).squeeze()
+        pred_branch, pred_junction = model(graph, graph.nodes['branch'].data['n_features'].float(),
+                                           graph.nodes['junction'].data['n_features'].float(),
+                                           average_flowrate=average_flowrate)
 
-        c_loss = gnn_model.compute_continuity_loss(graph, pred, label_coefs, coefs_dict)
+        pred_branch = pred_branch.squeeze()
+        pred_junction = pred_junction.squeeze()
+
+        c_loss = gnn_model.compute_continuity_loss(graph, pred_branch, pred_junction, label_coefs, coefs_dict)
         c_loss_total = c_loss_total + float(c_loss.detach().numpy())
         total_flowrate = total_flowrate + float(true_graph.nodes['inlet'].data['flowrate_' + str(tp1)].detach().numpy())
 
-        dp = bring_to_range_p(pred[:,0].detach().numpy())
+        dp_branch = bring_to_range_p(pred_branch[:,0].detach().numpy())
 
-        prev_p = graph.nodes['inner'].data['pressure'].detach().numpy().squeeze()
+        prev_p = graph.nodes['branch'].data['pressure'].detach().numpy().squeeze()
 
-        p = dp + prev_p
+        p_branch = dp_branch + prev_p
 
-        dq = bring_to_range_q(pred[:,1].detach().numpy())
+        dq_branch = bring_to_range_q(pred_branch[:,1].detach().numpy())
 
-        prev_q = graph.nodes['inner'].data['flowrate'].detach().numpy().squeeze()
+        prev_q = graph.nodes['branch'].data['flowrate'].detach().numpy().squeeze()
 
-        q = dq + prev_q
+        q_branch = dq_branch + prev_q
 
-        err_p = err_p + np.linalg.norm(p - next_pressure.detach().numpy().squeeze())**2
-        norm_p = norm_p + np.linalg.norm(next_pressure.detach().numpy().squeeze())**2
-        err_q = err_q + np.linalg.norm(q - next_flowrate.detach().numpy().squeeze())**2
-        norm_q = norm_q + np.linalg.norm(next_flowrate.detach().numpy().squeeze())**2
+        err_p_branch = err_p_branch + np.linalg.norm(p_branch - next_pressure_branch.detach().numpy().squeeze())**2
+        norm_p_branch = norm_p_branch + np.linalg.norm(next_pressure_branch.detach().numpy().squeeze())**2
+        err_q_branch = err_q_branch + np.linalg.norm(q_branch - next_flowrate_branch.detach().numpy().squeeze())**2
+        norm_q_branch = norm_q_branch + np.linalg.norm(next_flowrate_branch.detach().numpy().squeeze())**2
 
-        pressure_dict_exact = {'inner': next_pressure,
+        dp_junction = bring_to_range_p(pred_junction[:,0].detach().numpy())
+
+        prev_p = graph.nodes['junction'].data['pressure'].detach().numpy().squeeze()
+
+        p_junction = dp_junction + prev_p
+
+        dq_junction = bring_to_range_q(pred_junction[:,1].detach().numpy())
+
+        prev_q = graph.nodes['junction'].data['flowrate'].detach().numpy().squeeze()
+
+        q_junction = dq_junction + prev_q
+
+        err_p_junction = err_p_junction + np.linalg.norm(p_junction - next_pressure_junction.detach().numpy().squeeze())**2
+        norm_p_junction = norm_p_junction + np.linalg.norm(next_pressure_junction.detach().numpy().squeeze())**2
+        err_q_junction = err_q_junction + np.linalg.norm(q_junction - next_flowrate_junction.detach().numpy().squeeze())**2
+        norm_q_junction = norm_q_junction + np.linalg.norm(next_flowrate_junction.detach().numpy().squeeze())**2
+
+        p = np.concatenate((p_branch, p_junction), axis = 0)
+        p_real = np.concatenate((next_pressure_branch, next_pressure_junction), axis = 0)
+        err_p = err_p + np.linalg.norm(p - p_real)**2
+        norm_p = norm_p + np.linalg.norm(p_real)**2
+
+        q = np.concatenate((q_branch, q_junction), axis = 0)
+        q_real = np.concatenate((next_flowrate_branch, next_flowrate_junction), axis = 0)
+        err_q = err_q + np.linalg.norm(q - q_real)**2
+        norm_q = norm_q + np.linalg.norm(q_real)**2
+
+        pressure_dict_exact = {'branch': next_pressure_branch,
+                               'junction': next_pressure_junction,
                                'inlet': graph.nodes['inlet'].data['pressure_next'],
                                'outlet': graph.nodes['outlet'].data['pressure_next'],}
-        flowrate_dict_exact = {'inner': next_flowrate,
+        flowrate_dict_exact = {'branch': next_flowrate_branch,
+                               'junction': next_flowrate_junction,
                                'inlet': graph.nodes['inlet'].data['flowrate_next'],
                                'outlet': graph.nodes['outlet'].data['flowrate_next']}
 
         exact_state = {'pressure': pressure_dict_exact, 'flowrate': flowrate_dict_exact}
 
-        pressure_exact, flowrate_exact = get_solution_all_nodes(exact_state, graph)
 
-        pressures_real.append(pressure_exact)
-        flowrates_real.append(flowrate_exact)
+        pressures_branch_real.append(next_pressure_branch.detach().numpy())
+        pressures_junction_real.append(next_pressure_junction.detach().numpy())
+        flowrates_branch_real.append(next_flowrate_branch.detach().numpy())
+        flowrates_junction_real.append(next_flowrate_junction.detach().numpy())
 
-        pressure_dict = {'inner': torch.from_numpy(np.expand_dims(p,axis=1)),
+        pressure_dict = {'branch': torch.from_numpy(np.expand_dims(p_branch,axis=1)),
+                         'junction': torch.from_numpy(np.expand_dims(p_junction,axis=1)),
                          'inlet': graph.nodes['inlet'].data['pressure_next'],
                          'outlet': graph.nodes['outlet'].data['pressure_next'],}
-        flowrate_dict = {'inner': torch.from_numpy(np.expand_dims(q,axis=1)),
+        flowrate_dict = {'branch': torch.from_numpy(np.expand_dims(q_branch,axis=1)),
+                         'junction': torch.from_numpy(np.expand_dims(q_junction,axis=1)),
                          'inlet': graph.nodes['inlet'].data['flowrate_next'],
                          'outlet': graph.nodes['outlet'].data['flowrate_next']}
 
         new_state = {'pressure': pressure_dict, 'flowrate': flowrate_dict}
-        pressure, flowrate = get_solution_all_nodes(new_state, graph)
 
-        pressures_pred.append(pressure)
-        flowrates_pred.append(flowrate)
+        pressures_branch_pred.append(np.expand_dims(p_branch,axis=1))
+        pressures_junction_pred.append(np.expand_dims(p_junction,axis=1))
+        flowrates_branch_pred.append(np.expand_dims(q_branch,axis=1))
+        flowrates_junction_pred.append(np.expand_dims(q_junction,axis=1))
 
         pred_states.append(new_state)
         real_states.append(exact_state)
@@ -222,22 +293,37 @@ def test_rollout(model, params, dataset, index_graph, split, out_folder):
     print('Rollout time = {:.2f} s for {:.0f} timesteps'.format(end - start,
                                                                 len(times)))
 
+    err_p_branch = np.sqrt(err_p_branch / norm_p_branch)
+    err_q_branch = np.sqrt(err_q_branch / norm_q_branch)
+    err_p_junction = np.sqrt(err_p_junction / norm_p_junction)
+    err_q_junction = np.sqrt(err_q_junction / norm_q_junction)
     err_p = np.sqrt(err_p / norm_p)
     err_q = np.sqrt(err_q / norm_q)
 
+    print('Error pressure branches = {:.5e}'.format(err_p_branch))
+    print('Error flowrate branches = {:.5e}'.format(err_q_branch))
+    print('Global error branches = {:.5e}'.format(np.sqrt(err_p_branch**2 + err_q_branch**2)))
+    print('Error pressure junctions = {:.5e}'.format(err_p_junction))
+    print('Error flowrate junctions = {:.5e}'.format(err_q_junction))
+    print('Global error junctions = {:.5e}'.format(np.sqrt(err_p_junction**2 + err_q_junction**2)))
     print('Error pressure = {:.5e}'.format(err_p))
     print('Error flowrate = {:.5e}'.format(err_q))
-    print('Global error = {:.5e}'.format(np.sqrt(err_p**2 + err_q**2)))
+    print('Global error junctions = {:.5e}'.format(np.sqrt(err_p**2 + err_q**2)))
     print('Relative flowrate loss = {:.5e}'.format(c_loss_total / total_flowrate))
 
-    color_nodes, nodes_type = get_color_nodes(graph, cmap = cm.get_cmap("plasma"))
+    # color_nodes, nodes_type = get_color_nodes(graph, cmap = cm.get_cmap("plasma"))
 
-    bounds = {'pressure': compute_min_max_list(pressures_real, 'pressure', coefs_dict),
-              'flowrate': compute_min_max_list(flowrates_real, 'flowrate', coefs_dict)}
+    p_bounds = compute_min_max_list(pressures_branch_real + \
+                                    pressures_junction_real, 'pressure', coefs_dict)
+    q_bounds = compute_min_max_list(flowrates_branch_real + \
+                                    flowrates_junction_real, 'flowrate', coefs_dict)
 
-    ptools.plot_static(graph, pressures_pred, flowrates_pred, pressures_real, flowrates_real,
+    bounds = {'pressure': p_bounds, 'flowrate': q_bounds}
+
+    ptools.plot_static(graph, pressures_branch_pred, flowrates_branch_pred,
+                       pressures_branch_real, flowrates_branch_real,
                        graph.nodes['params'].data['times'].detach().numpy(),
-                       coefs_dict, nodes_type, npoints=3, outdir=out_folder)
+                       coefs_dict, npoints=3, outdir=out_folder)
 
     print3D = False
     if print3D:
@@ -257,13 +343,17 @@ def test_rollout(model, params, dataset, index_graph, split, out_folder):
                         coefs_dict, bounds, 'flowrate', outfile_name=out_folder + '/3d_flowrate_real.mp4',
                         time = 5)
 
-    ptools.plot_linear(pressures_pred, flowrates_pred, pressures_real, flowrates_real,
+    color_nodes = get_color_nodes(graph)
+
+    ptools.plot_linear(pressures_branch_pred, flowrates_branch_pred,
+                       pressures_junction_pred, flowrates_junction_pred,
+                       pressures_branch_real, flowrates_branch_real,
+                       pressures_junction_real, flowrates_junction_real,
                        color_nodes,
                        graph.nodes['params'].data['times'].detach().numpy(),
                        coefs_dict, bounds, out_folder + '/linear.mp4', time = 5)
 
-    ptools.plot_node_types(graph, out_folder + '/node_types.mp4', time = 5,
-                           cmap = cm.get_cmap("plasma"))
+    ptools.plot_node_types(graph, color_nodes, out_folder + '/node_types.mp4', time = 5)
 
     return err_p, err_q, np.sqrt(err_p**2 + err_q**2)
 
