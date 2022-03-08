@@ -269,6 +269,78 @@ class GraphNet(Module):
 
         return torch.mean(torch.abs(diff))
 
+    # g must have bcs set
+    def compute_bc_loss(self, g,
+                        branch_features,
+                        junct_features,
+                        inlet_features,
+                        outlet_features,
+                        pred_branch,
+                        pred_junction,
+                        label_coefs):
+
+        # compute branch next p
+        pred_p = torch.matmul(pred_branch, self.pressure_selector).squeeze()
+        pred_q = torch.matmul(pred_branch, self.flowrate_selector).squeeze()
+
+        # we have to bring the flowrate into the original units to compute
+        # mass loss
+        if label_coefs['normalization_type'] == 'min_max':
+            pred_p = label_coefs['min'][0] + \
+                     pred_p * \
+                     (label_coefs['max'][0] - label_coefs['min'][0])
+            pred_q = label_coefs['min'][1] + \
+                     pred_q * \
+                     (label_coefs['max'][1] - label_coefs['min'][1])
+        elif label_coefs['normalization_type'] == 'standard':
+            pred_p = label_coefs['mean'][0] + pred_p * label_coefs['std'][0]
+            pred_q = label_coefs['mean'][1] + pred_q * label_coefs['std'][1]
+
+
+        pred_p_branch = pred_p + branch_features[:,0]
+        pred_q_branch = pred_q + branch_features[:,1]
+
+        # compute branch next q
+        pred_p = torch.matmul(pred_junction, self.pressure_selector).squeeze()
+        pred_q = torch.matmul(pred_junction, self.flowrate_selector).squeeze()
+
+        # we have to bring the flowrate into the original units to compute
+        # mass loss
+        if label_coefs['normalization_type'] == 'min_max':
+            pred_p = label_coefs['min'][0] + \
+                     pred_p * \
+                     (label_coefs['max'][0] - label_coefs['min'][0])
+            pred_q = label_coefs['min'][1] + \
+                     pred_q * \
+                     (label_coefs['max'][1] - label_coefs['min'][1])
+        elif label_coefs['normalization_type'] == 'standard':
+            pred_p = label_coefs['mean'][0] + pred_p * label_coefs['std'][0]
+            pred_q = label_coefs['mean'][1] + pred_q * label_coefs['std'][1]
+
+        pred_p_junction = pred_p + junct_features[:,0]
+        pred_q_junction = pred_q + junct_features[:,1]
+
+        nnodes = pred_p_branch.shape[0] + pred_p_junction.shape[0]
+
+        global_sol = torch.zeros((nnodes,2))
+
+        global_sol[g.nodes['branch'].data['mask'], 0] = pred_p_branch
+        global_sol[g.nodes['branch'].data['mask'], 1] = pred_q_branch
+        global_sol[g.nodes['junction'].data['mask'], 0] = pred_p_junction
+        global_sol[g.nodes['junction'].data['mask'], 1] = pred_q_junction
+
+        columns = [0, 2]
+        n_inlet = inlet_features.shape[0]
+        pred_inlet = global_sol[g.nodes['inlet'].data['mask'],:]
+        loss_inlet = ((pred_inlet - inlet_features[:,columns]) ** 2).mean()
+
+        n_outlets = outlet_features.shape[0]
+        pred_outlets = global_sol[g.nodes['outlet'].data['mask'],:]
+        loss_outlets = ((pred_outlets - outlet_features[:,columns]) ** 2).mean()
+
+        return (loss_inlet * n_inlet + loss_outlets * n_outlets) / (n_inlet + n_outlets)
+
+
     def compute_flowrate_correction(self, edges):
         f1 = edges.src['average_q']
         f2 = edges.dst['pred_q']

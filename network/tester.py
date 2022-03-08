@@ -69,11 +69,9 @@ def compute_min_max_list(tlist, field_name, coefs):
     MM = np.NINF
 
     for el in tlist:
-        mm = np.min([np.min(el), mm])
-        MM = np.max([np.max(el), MM])
-
-    mm = pp.invert_normalize_function(mm, field_name, coefs)
-    MM = pp.invert_normalize_function(MM, field_name, coefs)
+        eln = pp.invert_normalize_function(el, field_name, coefs)
+        mm = np.min([np.min(eln), mm])
+        MM = np.max([np.max(eln), MM])
 
     return {'min': mm, 'max': MM}
 
@@ -242,15 +240,11 @@ def test_rollout(model, params, dataset, index_graph, split, out_folder):
         err_q_junction = err_q_junction + np.linalg.norm(q_junction - next_flowrate_junction.detach().numpy().squeeze())**2
         norm_q_junction = norm_q_junction + np.linalg.norm(next_flowrate_junction.detach().numpy().squeeze())**2
 
-        p = np.concatenate((p_branch, p_junction), axis = 0)
-        p_real = np.concatenate((next_pressure_branch, next_pressure_junction), axis = 0)
-        err_p = err_p + np.linalg.norm(p - p_real)**2
-        norm_p = norm_p + np.linalg.norm(p_real)**2
+        err_p = err_p + err_p_branch + err_p_junction
+        norm_p = norm_p + norm_p_branch + norm_p_junction
 
-        q = np.concatenate((q_branch, q_junction), axis = 0)
-        q_real = np.concatenate((next_flowrate_branch, next_flowrate_junction), axis = 0)
-        err_q = err_q + np.linalg.norm(q - q_real)**2
-        norm_q = norm_q + np.linalg.norm(q_real)**2
+        err_q = err_q + err_q_branch + err_q_junction
+        norm_q = norm_q + norm_q_branch + norm_q_junction
 
         pressure_dict_exact = {'branch': next_pressure_branch,
                                'junction': next_pressure_junction,
@@ -308,7 +302,7 @@ def test_rollout(model, params, dataset, index_graph, split, out_folder):
     print('Global error junctions = {:.5e}'.format(np.sqrt(err_p_junction**2 + err_q_junction**2)))
     print('Error pressure = {:.5e}'.format(err_p))
     print('Error flowrate = {:.5e}'.format(err_q))
-    print('Global error junctions = {:.5e}'.format(np.sqrt(err_p**2 + err_q**2)))
+    print('Global error = {:.5e}'.format(np.sqrt(err_p**2 + err_q**2)))
     print('Relative flowrate loss = {:.5e}'.format(c_loss_total / total_flowrate))
 
     # color_nodes, nodes_type = get_color_nodes(graph, cmap = cm.get_cmap("plasma"))

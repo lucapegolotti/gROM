@@ -24,21 +24,21 @@ def set_state(graph, state_dict, next_state_dict = None, noise_dict = None, coef
         if next_state_dict != None:
             graph.nodes[node_type].data['pressure_next'] = next_state_dict['pressure'][node_type]
             graph.nodes[node_type].data['flowrate_next'] = next_state_dict['flowrate'][node_type]
-            if noise_dict == None  or node_type != 'branch' or node_type != 'junction':
+            if noise_dict == None:
                 graph.nodes[node_type].data['n_labels'] = torch.cat((graph.nodes[node_type].data['pressure_next'] - \
                                                                      graph.nodes[node_type].data['pressure'], \
                                                                      graph.nodes[node_type].data['flowrate_next'] - \
                                                                      graph.nodes[node_type].data['flowrate']), 1).float()
 
             else:
-                if node_type != 'branch':
+                if node_type == 'branch':
                     graph.nodes[node_type].data['n_labels'] = torch.cat((graph.nodes[node_type].data['pressure_next'] - \
                                                                          graph.nodes[node_type].data['pressure'] - \
                                                                          noise_dict['pressure_branch'], \
                                                                          graph.nodes[node_type].data['flowrate_next'] - \
                                                                          graph.nodes[node_type].data['flowrate'] - \
                                                                          noise_dict['flowrate_branch']), 1).float()
-                if node_type != 'junction':
+                elif node_type == 'junction':
                     graph.nodes[node_type].data['n_labels'] = torch.cat((graph.nodes[node_type].data['pressure_next'] - \
                                                                          graph.nodes[node_type].data['pressure'] - \
                                                                          noise_dict['pressure_junct'], \
@@ -216,17 +216,18 @@ class DGL_Dataset(DGLDataset):
                             'normalization_type': self.label_normalization}
 
     def sample_noise(self, rate):
-        ngraphs = len(self.noise_pressures)
+        ngraphs = len(self.noise_pressures_branch)
         for igraph in range(ngraphs):
             dt = float(self.graphs[igraph].nodes['branch'].data['dt'][0])
             dt = invert_normalize_function(dt, 'dt', self.coefs_dict)
             actual_rate = rate * dt
-            nnodes = self.noise_pressures[igraph].shape[0]
+            nnodes_branch = self.noise_pressures_branch[igraph].shape[0]
+            nnodes_junction = self.noise_pressures_junct[igraph].shape[0]
             for index in range(1,self.times[igraph].shape[1]-1):
-                self.noise_pressures_branch[igraph][:,index] = np.random.normal(0, actual_rate, (nnodes)) + self.noise_pressures_branch[igraph][:,index-1]
-                self.noise_flowrates_branch[igraph][:,index] = np.random.normal(0, actual_rate, (nnodes)) + self.noise_flowrates_branch[igraph][:,index-1]
-                self.noise_pressures_junct[igraph][:,index] = np.random.normal(0, actual_rate, (nnodes)) + self.noise_pressures_junct[igraph][:,index-1]
-                self.noise_pressures_junct[igraph][:,index] = np.random.normal(0, actual_rate, (nnodes)) + self.noise_pressures_junct[igraph][:,index-1]
+                self.noise_pressures_branch[igraph][:,index] = np.random.normal(0, actual_rate, (nnodes_branch)) + self.noise_pressures_branch[igraph][:,index-1]
+                self.noise_flowrates_branch[igraph][:,index] = np.random.normal(0, actual_rate, (nnodes_branch)) + self.noise_flowrates_branch[igraph][:,index-1]
+                self.noise_pressures_junct[igraph][:,index] = np.random.normal(0, actual_rate, (nnodes_junction)) + self.noise_pressures_junct[igraph][:,index-1]
+                self.noise_flowrates_junct[igraph][:,index] = np.random.normal(0, actual_rate, (nnodes_junction)) + self.noise_flowrates_junct[igraph][:,index-1]
 
     def get_state_dict(self, gindex, tindex):
         pressure_dict = {'branch': self.graphs[gindex].nodes['branch'].data['pressure_' + str(tindex)],
@@ -609,6 +610,21 @@ def generate_dataset(model_names, coefs_dict = None, dataset_params = None):
     graphs = []
     for model_name in model_names:
         graphs.append(load_graphs('../graphs/data/' + model_name + '.grph')[0][0])
+
+    # print dataset statistics
+    nnodes = 0
+    nedges = 0
+    for graph in graphs:
+        nnodes = nnodes + graph.nodes['branch'].data['x'].shape[0]
+        nnodes = nnodes + graph.nodes['junction'].data['x'].shape[0]
+        nedges = nedges + graph.edges['branch_to_branch'].data['position'].shape[0]
+        nedges = nedges + graph.edges['branch_to_junction'].data['position'].shape[0]
+        nedges = nedges + graph.edges['junction_to_junction'].data['position'].shape[0]
+        nedges = nedges + graph.edges['junction_to_branch'].data['position'].shape[0]
+
+    print('n. graphs = ' + str(len(graphs)))
+    print('average n. nodes = ' + str(nnodes / len(graphs)))
+    print('average n. edges = ' + str(nedges / len(graphs)))
 
     normalization_type = 'standard'
     if dataset_params != None:
