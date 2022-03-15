@@ -99,6 +99,7 @@ def get_color_nodes(graph, cmap = cm.get_cmap("plasma")):
 
 
 def test_rollout(model, params, dataset, index_graph, split, out_folder):
+    model.eval()
     graph = dataset.lightgraphs[index_graph]
     model_name = params['dataset_parameters']['split'][split][index_graph]
     true_graph = load_graphs('../graphs/data/' + model_name + '.grph')[0][0]
@@ -305,51 +306,52 @@ def test_rollout(model, params, dataset, index_graph, split, out_folder):
     print('Global error = {:.5e}'.format(np.sqrt(err_p**2 + err_q**2)))
     print('Relative flowrate loss = {:.5e}'.format(c_loss_total / total_flowrate))
 
-    # color_nodes, nodes_type = get_color_nodes(graph, cmap = cm.get_cmap("plasma"))
+    save_plots = True
+    if save_plots:
+        p_bounds = compute_min_max_list(pressures_branch_real + \
+                                        pressures_junction_real, 'pressure', coefs_dict)
+        q_bounds = compute_min_max_list(flowrates_branch_real + \
+                                        flowrates_junction_real, 'flowrate', coefs_dict)
 
-    p_bounds = compute_min_max_list(pressures_branch_real + \
-                                    pressures_junction_real, 'pressure', coefs_dict)
-    q_bounds = compute_min_max_list(flowrates_branch_real + \
-                                    flowrates_junction_real, 'flowrate', coefs_dict)
+        bounds = {'pressure': p_bounds, 'flowrate': q_bounds}
 
-    bounds = {'pressure': p_bounds, 'flowrate': q_bounds}
+        ptools.plot_static(graph, pressures_branch_pred, flowrates_branch_pred,
+                           pressures_branch_real, flowrates_branch_real,
+                           graph.nodes['params'].data['times'].detach().numpy(),
+                           coefs_dict, npoints=3, outdir=out_folder)
 
-    ptools.plot_static(graph, pressures_branch_pred, flowrates_branch_pred,
-                       pressures_branch_real, flowrates_branch_real,
-                       graph.nodes['params'].data['times'].detach().numpy(),
-                       coefs_dict, npoints=3, outdir=out_folder)
+        print3D = False
+        if print3D:
+            ptools.plot_3D(model_name, pred_states, graph.nodes['params'].data['times'].detach().numpy(),
+                            coefs_dict, bounds, 'pressure', outfile_name=out_folder + '/3d_pressure_pred.mp4',
+                            time = 5)
 
-    print3D = False
-    if print3D:
-        ptools.plot_3D(model_name, pred_states, graph.nodes['params'].data['times'].detach().numpy(),
-                        coefs_dict, bounds, 'pressure', outfile_name=out_folder + '/3d_pressure_pred.mp4',
-                        time = 5)
+            ptools.plot_3D(model_name, real_states, graph.nodes['params'].data['times'].detach().numpy(),
+                            coefs_dict, bounds, 'pressure', outfile_name=out_folder + '/3d_pressure_real.mp4',
+                            time = 5)
 
-        ptools.plot_3D(model_name, real_states, graph.nodes['params'].data['times'].detach().numpy(),
-                        coefs_dict, bounds, 'pressure', outfile_name=out_folder + '/3d_pressure_real.mp4',
-                        time = 5)
+            ptools.plot_3D(model_name, pred_states, graph.nodes['params'].data['times'].detach().numpy(),
+                            coefs_dict, bounds, 'flowrate', outfile_name=out_folder + '/3d_flowrate_pred.mp4',
+                            time = 5)
 
-        ptools.plot_3D(model_name, pred_states, graph.nodes['params'].data['times'].detach().numpy(),
-                        coefs_dict, bounds, 'flowrate', outfile_name=out_folder + '/3d_flowrate_pred.mp4',
-                        time = 5)
+            ptools.plot_3D(model_name, real_states, graph.nodes['params'].data['times'].detach().numpy(),
+                            coefs_dict, bounds, 'flowrate', outfile_name=out_folder + '/3d_flowrate_real.mp4',
+                            time = 5)
 
-        ptools.plot_3D(model_name, real_states, graph.nodes['params'].data['times'].detach().numpy(),
-                        coefs_dict, bounds, 'flowrate', outfile_name=out_folder + '/3d_flowrate_real.mp4',
-                        time = 5)
+        color_nodes = get_color_nodes(graph)
 
-    color_nodes = get_color_nodes(graph)
+        ptools.plot_linear(pressures_branch_pred, flowrates_branch_pred,
+                           pressures_junction_pred, flowrates_junction_pred,
+                           pressures_branch_real, flowrates_branch_real,
+                           pressures_junction_real, flowrates_junction_real,
+                           color_nodes,
+                           graph.nodes['params'].data['times'].detach().numpy(),
+                           coefs_dict, bounds, out_folder + '/linear.mp4', time = 5)
 
-    ptools.plot_linear(pressures_branch_pred, flowrates_branch_pred,
-                       pressures_junction_pred, flowrates_junction_pred,
-                       pressures_branch_real, flowrates_branch_real,
-                       pressures_junction_real, flowrates_junction_real,
-                       color_nodes,
-                       graph.nodes['params'].data['times'].detach().numpy(),
-                       coefs_dict, bounds, out_folder + '/linear.mp4', time = 5)
+        ptools.plot_node_types(graph, color_nodes, out_folder + '/node_types.mp4', time = 5)
 
-    ptools.plot_node_types(graph, color_nodes, out_folder + '/node_types.mp4', time = 5)
-
-    return err_p, err_q, np.sqrt(err_p**2 + err_q**2)
+    return err_p_branch, err_q_branch, err_p_junction, err_q_junction, \
+           err_p, err_q, c_loss_total / total_flowrate
 
 if __name__ == "__main__":
     path = sys.argv[1]
@@ -369,6 +371,13 @@ if __name__ == "__main__":
     coefs_dict = dataset.coefs_dict
 
     print('==========VALIDATION==========')
+    tot_err_p_branch = 0
+    tot_err_q_branch = 0
+    tot_err_p_junction = 0
+    tot_err_q_junction = 0
+    tot_err_p = 0
+    tot_err_q = 0
+    tot_continuity = 0
     if os.path.exists('results_validation'):
         shutil.rmtree('results_validation')
     training.create_directory('results_validation')
@@ -376,10 +385,28 @@ if __name__ == "__main__":
         model_name = params['dataset_parameters']['split']['validation'][i]
         print('model name = ' + model_name)
         training.create_directory('results_validation/' + model_name)
-        err_p, err_q, global_error = test_rollout(gnn_model, params,
-                                                  dataset, index_graph = i,
-                                                  split = 'validation',
-                                                  out_folder = 'results_validation/' + model_name)
+        err_p_branch, err_q_branch, err_p_junction, \
+        err_q_junction, err_p, err_q, cont = test_rollout(gnn_model, params,
+                                                   dataset, index_graph = i,
+                                                   split = 'validation',
+                                                   out_folder = 'results_validation/' + model_name)
+        tot_err_p_branch = tot_err_p_branch + err_p_branch
+        tot_err_q_branch = tot_err_q_branch + err_q_branch
+        tot_err_p_junction = tot_err_p_junction + err_p_junction
+        tot_err_q_junction = tot_err_q_junction + err_q_junction
+        tot_err_p = tot_err_p + err_p
+        tot_err_q = tot_err_q + err_q
+        tot_continuity = tot_continuity + cont
+
+    print('----------------------------')
+    print('Global statistics')
+    print('Error pressure branches = ' + str(tot_err_p_branch / num_validation))
+    print('Error flowrate branches = ' + str(tot_err_q_branch / num_validation))
+    print('Error pressure junction = ' + str(tot_err_p_junction / num_validation))
+    print('Error flowrate junction = ' + str(tot_err_q_junction / num_validation))
+    print('Error pressure = ' + str(tot_err_p / num_validation))
+    print('Error flowrate = ' + str(tot_err_q / num_validation))
+    print('Error continuity = ' + str(tot_continuity / num_validation))
 
     num_train = len(params['dataset_parameters']['split']['train'])
 
@@ -389,6 +416,13 @@ if __name__ == "__main__":
     coefs_dict = dataset.coefs_dict
 
     print('==========TRAIN==========')
+    tot_err_p_branch = 0
+    tot_err_q_branch = 0
+    tot_err_p_junction = 0
+    tot_err_q_junction = 0
+    tot_err_p = 0
+    tot_err_q = 0
+    tot_continuity = 0
     if os.path.exists('results_train'):
         shutil.rmtree('results_train')
     training.create_directory('results_train')
@@ -396,7 +430,25 @@ if __name__ == "__main__":
         model_name = params['dataset_parameters']['split']['train'][i]
         print('model name = ' + model_name)
         training.create_directory('results_train/' + model_name)
-        err_p, err_q, global_error = test_rollout(gnn_model, params,
+        err_p_branch, err_q_branch, err_p_junction, \
+        err_q_junction, err_p, err_q, cont = test_rollout(gnn_model, params,
                                                   dataset, index_graph = i,
                                                   split = 'train',
                                                   out_folder = 'results_train/' + model_name)
+        tot_err_p_branch = tot_err_p_branch + err_p_branch
+        tot_err_q_branch = tot_err_q_branch + err_q_branch
+        tot_err_p_junction = tot_err_p_junction + err_p_junction
+        tot_err_q_junction = tot_err_q_junction + err_q_junction
+        tot_err_p = tot_err_p + err_p
+        tot_err_q = tot_err_q + err_q
+        tot_continuity = tot_continuity + cont
+
+    print('----------------------------')
+    print('Global statistics')
+    print('Error pressure branches = ' + str(tot_err_p_branch / num_train))
+    print('Error flowrate branches = ' + str(tot_err_q_branch / num_train))
+    print('Error pressure junction = ' + str(tot_err_p_junction / num_train))
+    print('Error flowrate junction = ' + str(tot_err_q_junction / num_train))
+    print('Error pressure = ' + str(tot_err_p / num_train))
+    print('Error flowrate = ' + str(tot_err_q / num_train))
+    print('Error continuity = ' + str(tot_continuity / num_train))

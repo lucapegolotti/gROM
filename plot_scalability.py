@@ -8,7 +8,7 @@ font = {'family' : 'normal',
 matplotlib.rc('font', **font)
 
 cores = np.array([1, 2, 4, 8, 16])
-times = np.array([2936,  1341,  734,  443, 289])
+times = np.array([2448,  1341,  734,  443, 289])
 
 fig = plt.figure()
 ax = plt.axes()
@@ -20,4 +20,5 @@ ax.set_ylim((1,16))
 ax.set_xlabel('nodes')
 ax.set_ylabel('speedup')
 ax.set_aspect('equal', 'box')
+ax.set_xticks((1,2,4,8,16))
 plt.show()

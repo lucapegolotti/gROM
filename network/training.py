@@ -37,7 +37,8 @@ def generate_gnn_model(params_dict):
 def evaluate_model(gnn_model, train_dataloader, loss, metric = None,
                    optimizer = None, continuity_coeff = 0.0,
                    bc_coeff = 0.0,
-                   validation_dataloader = None):
+                   validation_dataloader = None,
+                   train = True):
 
     try:
         average_flowrate = gnn_model.module.params['average_flowrate_training']
@@ -45,6 +46,12 @@ def evaluate_model(gnn_model, train_dataloader, loss, metric = None,
         average_flowrate = gnn_model.params['average_flowrate_training']
     label_coefs = train_dataloader.dataloader.dataset.label_coefs
     coefs_dict = train_dataloader.dataloader.dataset.coefs_dict
+
+    # this is to turn on or off dropout layers
+    if train:
+        gnn_model.train()
+    else:
+        gnn_model.eval()
 
     def loop_over(dataloader, c_optimizer = None):
         global_loss = 0
@@ -131,7 +138,8 @@ def evaluate_model(gnn_model, train_dataloader, loss, metric = None,
 def train_gnn_model(gnn_model, train, validation, optimizer_name, train_params,
                     checkpoint_fct = None, dataset_params = None):
     # we only compute the coefs_dict on the train_dataset
-    train_dataset = pp.generate_dataset(train, dataset_params = dataset_params)
+    train_dataset = pp.generate_dataset(train, dataset_params = dataset_params,
+                                        augment = True)
     coefs_dict = train_dataset.coefs_dict
     print('Dataset contains {:.0f} graphs'.format(len(train_dataset)))
 
@@ -353,7 +361,7 @@ if __name__ == "__main__":
     except RuntimeError:
         print("MPI not supported. Running serially.")
 
-    dataset_json = json.load(open('training_dataset.json'))
+    dataset_json = json.load(open('training_dataset_all.json'))
 
     # params_dict = {'infeat_nodes': 13,
     #                'infeat_edges': 4,
@@ -376,13 +384,14 @@ if __name__ == "__main__":
     train_params = {'learning_rate': 0.008223127794360673,
                     'weight_decay': 0.36984122162067234,
                     'momentum': 0.0,
-                    'batch_size': 10,
+                    'batch_size': 100,
                     'nepochs': 200,
                     'continuity_coeff': -3,
-                    'bc_coeff': 1,}
+                    'bc_coeff': -5}
     dataset_params = {'normalization': 'standard',
                       'rate_noise': 60,
-                      'label_normalization': 'min_max'}
+                      'label_normalization': 'min_max',
+                      'augment_data': 1}
 
     start = time.time()
     launch_training(dataset_json,  'adam', params_dict, train_params,

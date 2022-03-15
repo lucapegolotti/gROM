@@ -606,10 +606,56 @@ def normalize(graphs, ntype, coefs_dict = None):
 
     return norm_graphs, coefs_dict
 
-def generate_dataset(model_names, coefs_dict = None, dataset_params = None):
+def randomize_graph(graph):
+    # we want to the keep the scale close to one otherwise flowrate and pressure
+    # don't make sense
+    minscale = 1/1.04
+    maxscale = 1.04
+    scale = minscale + np.random.rand(1) * (maxscale - minscale)
+
+    # random rotation matrix
+    R, _ = np.linalg.qr(np.random.rand(3,3))
+
+    def rotate_array(inarray):
+        inarray = np.matmul(inarray,R) * scale
+
+    def scale_array(inarray):
+        inarray = inarray * scale
+
+    newgraph = copy.deepcopy(graph)
+
+    rotate_array(newgraph.edges['branch_to_branch'].data['position'][:,0:3])
+    scale_array(newgraph.edges['branch_to_branch'].data['position'][:,3])
+    rotate_array(newgraph.edges['junction_to_junction'].data['position'][:,0:3])
+    scale_array(newgraph.edges['junction_to_junction'].data['position'][:,3])
+    rotate_array(newgraph.edges['junction_to_branch'].data['position'][:,0:3])
+    scale_array(newgraph.edges['junction_to_branch'].data['position'][:,3])
+    rotate_array(newgraph.edges['branch_to_junction'].data['position'][:,0:3])
+    scale_array(newgraph.edges['branch_to_junction'].data['position'][:,3])
+    scale_array(newgraph.edges['in_to_branch'].data['distance'])
+    scale_array(newgraph.edges['in_to_junction'].data['distance'])
+    scale_array(newgraph.edges['out_to_branch'].data['distance'])
+    scale_array(newgraph.edges['out_to_junction'].data['distance'])
+
+    rotate_array(newgraph.nodes['branch'].data['x'])
+    scale_array(newgraph.nodes['branch'].data['area'])
+    rotate_array(newgraph.nodes['branch'].data['tangent'])
+
+    rotate_array(newgraph.nodes['junction'].data['x'])
+    scale_array(newgraph.nodes['junction'].data['area'])
+    rotate_array(newgraph.nodes['junction'].data['tangent'])
+
+    rotate_array(newgraph.nodes['inlet'].data['x'])
+    rotate_array(newgraph.nodes['outlet'].data['x'])
+
+    return newgraph
+
+def generate_dataset(model_names, coefs_dict = None, dataset_params = None, augment = False):
     graphs = []
     for model_name in model_names:
         graphs.append(load_graphs('../graphs/data/' + model_name + '.grph')[0][0])
+
+    numgraphs = len(graphs)
 
     # print dataset statistics
     nnodes = 0
@@ -625,6 +671,12 @@ def generate_dataset(model_names, coefs_dict = None, dataset_params = None):
     print('n. graphs = ' + str(len(graphs)))
     print('average n. nodes = ' + str(nnodes / len(graphs)))
     print('average n. edges = ' + str(nedges / len(graphs)))
+
+    if augment:
+        num_augmentation = dataset_params['augment_data']
+        for i in range(num_augmentation):
+            for igraph in range(numgraphs):
+                graphs.append(randomize_graph(graphs[igraph]))
 
     normalization_type = 'standard'
     if dataset_params != None:

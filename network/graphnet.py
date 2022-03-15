@@ -25,6 +25,8 @@ class MLP(Module):
             self.hidden_layers.append(Linear(latent_space, latent_space, bias = True).float())
             # torch.nn.init.uniform_(self.hidden_layers[i].weight, -bound_init, bound_init)
 
+        # self.dropout = torch.nn.Dropout(0.2)
+
         self.normalize = normalize
         if self.normalize: # Try GroupNorm
             self.norm = LayerNorm(out_feats).float()
@@ -37,6 +39,7 @@ class MLP(Module):
             enc_features = self.hidden_layers[i](enc_features)
             enc_features = F.leaky_relu(enc_features)
 
+        # enc_features = self.dropout(enc_features)
         enc_features = self.encoder_out(enc_features)
 
         if self.normalize:
