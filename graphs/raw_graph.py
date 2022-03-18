@@ -3,11 +3,15 @@ import scipy
 from scipy import interpolate
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
+import random
 
 class RawGraph:
     def __init__(self, points, params, debug = False):
         self.points = points
-        self.resample_original(params['resample_original'], points)
+
+        resample_original_coeff = random.randint(params['min_resample_original'],
+                                                 params['max_resample_original'])
+        self.resample_original(resample_original_coeff, points)
         self.points = points[self.resampled_indices , :]
         self.params = params
         self.debug = debug
@@ -306,7 +310,36 @@ class RawGraph:
 
         return proj_field, sliced_field
 
+    def project_multiple(self, fields):
+        proj_fields = []
+        nportions = len(self.portions)
+        sliced_fields = [[] for i in range(nportions)]
+        indices = [t for t in fields]
+        indices.sort()
+        for t in indices:
+            r_field = fields[t][self.resampled_indices]
+            sliced_field = self.partition(r_field)
+
+            for ipor in range(nportions):
+                sliced_fields[ipor].append(sliced_field[ipor])
+
+        for ipor in range(nportions):
+            sliced_fields[ipor] = np.squeeze(np.array(sliced_fields[ipor])).transpose()
+            weights = np.linalg.solve(self.interpolation_matrices[ipor],
+                                      sliced_fields[ipor])
+            if weights[0,0] != weights[0,0]:
+                msg = "Interpolation weights became nan. Maybe points in " + \
+                      "original geometry were too close. Try increasing the " + \
+                      "resample_original parameter for this geometry."
+                raise ValueError(msg)
+            proj_values = np.matmul(self.projection_matrices[ipor], weights)
+            proj_fields.append(proj_values)
+
+        return proj_fields, sliced_fields, indices
+
     def resample(self):
+        coarsening = random.randint(self.params['min_coarsening'],
+                                    self.params['max_coarsening'])
         resampled_portions = []
         resampled_junctions = []
         resampled_tangents = []
@@ -314,7 +347,7 @@ class RawGraph:
         for portion in self.portions:
             # compute h of the portion
             alength = self.compute_portion_length(portion)
-            N = int(np.floor(alength / (self.params['coarsening'] * self.h)))
+            N = int(np.floor(alength / (coarsening * self.h)))
 
             if N < 2:
                 raise ValueError("Too few points in portion, \
@@ -397,8 +430,14 @@ class RawGraph:
         stdevcoeff = 50
 
         def kernel(nnorm, h):
-            # 99% of the gaussian distribution is within 3 stdev from the mean
+            # for some reason, norm^2 doesn't work
+            # https://en.wikipedia.org/wiki/Radial_basis_function_kernel
             return np.exp(-(nnorm / (2 * (h * stdevcoeff)**2)))
+
+        # def kernel(nnorm, h):
+        #     # 99% of the gaussian distribution is within 3 stdev from the mean
+        #     stdv = stdevcoeff * h
+        #     return np.exp(-0.5*(nnorm / (2 * (stdv)))**2)
 
         for ipor in range(0,len(self.portions)):
             N = self.resampled_portions[ipor].shape[0]
@@ -417,13 +456,12 @@ class RawGraph:
                                         self.portions[ipor][j-1,:])
                 h = np.max((h1, h2))
                 hs.append(h)
+            hs = np.array(hs)
             for i in range(0,N):
-                for j in range(0,M):
-                    n = np.linalg.norm(self.resampled_portions[ipor][i,:] -
-                                       self.portions[ipor][j,:])
-                    # we consider 4 stdev to be safe
-                    # if n < 4 * hs[j] * stdevcoeff:
-                    new_matrix[i,j] = kernel(n,hs[j])
+                n = np.linalg.norm(self.portions[ipor] -
+                                   self.resampled_portions[ipor][i,:], axis = 1)
+
+                new_matrix[i,:] = kernel(n, hs)
 
             p_matrices.append(new_matrix)
 
@@ -431,11 +469,10 @@ class RawGraph:
             M = N
             new_matrix = np.zeros((N,M))
             for i in range(0,N):
-                for j in range(0,M):
-                    n = np.linalg.norm(self.portions[ipor][i,:] - \
-                                       self.portions[ipor][j,:])
+                n = np.linalg.norm(self.portions[ipor] - \
+                                   self.portions[ipor][i,:], axis = 1)
                     # if n < 4 * hs[j] * stdevcoeff:
-                    new_matrix[i,j] = kernel(n,hs[j])
+                new_matrix[i,:] = kernel(n,hs)
 
             i_matrices.append(new_matrix)
 
@@ -479,6 +516,21 @@ class RawGraph:
         res = self.stack(p_field)
         s_field_stacked = self.stack(s_field)
         return res, s_field_stacked
+
+    def partition_and_stack_fields(self, fields):
+        p_field, s_field, indices = self.project_multiple(fields)
+        res = self.stack(p_field)
+        s_field_stacked = self.stack(s_field)
+
+        res_l = {}
+        s_field_stacked_l = {}
+        count = 0
+        for ind in indices:
+            res_l[ind] = np.expand_dims(res[:,count], 1)
+            s_field_stacked_l[ind] = np.expand_dims(s_field_stacked[:,count],1)
+            count = count + 1
+
+        return res_l, s_field_stacked_l
 
     def create_homogeneous_graph(self):
         def seq_array(minv, maxv):

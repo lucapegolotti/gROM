@@ -23,6 +23,8 @@ from raw_graph import RawGraph
 import plot_tools as pt
 import pathlib
 from os.path import exists
+import random
+import time
 
 DTYPE = np.float32
 
@@ -46,8 +48,6 @@ def create_fixed_graph(raw_graph, area):
                   (outlet_dict['edges_branch'][:,0], outlet_dict['edges_branch'][:,1]), \
                   ('outlet', 'out_to_junction', 'junction'): \
                   (outlet_dict['edges_junct'][:,0], outlet_dict['edges_junct'][:,1]), \
-                  ('params', 'dummy', 'params'): \
-                  (np.array([0]), np.array([0])), \
                   ('branch', 'branch_to_macro', 'macro'): \
                   (macro_dict['branch_to_macro'][:,0],
                    macro_dict['branch_to_macro'][:,1]),
@@ -178,15 +178,14 @@ def add_fields(graph, pressure, velocity):
         set_field(newgraph, 'pressure_' + str(t), pressure[times[t]])
         set_field(newgraph, 'flowrate_' + str(t), velocity[times[t]])
 
-    newgraph.nodes['params'].data['times'] = \
-                        torch.from_numpy(np.expand_dims(np.array(times),axis=0))
-
     newgraph.nodes['branch'].data['dt'] = graph.nodes['branch'].data['dt'] * (np.array(times[1] - times[0]))
     newgraph.nodes['junction'].data['dt'] = graph.nodes['junction'].data['dt'] * (np.array(times[1] - times[0]))
 
     return newgraph
 
-def augment_time(field, timestep, ntimepoints):
+def augment_time(field, model_params, ntimepoints):
+    timestep = model_params['timestep']
+
     times_before = [t for t in field]
     times_before.sort()
     ntimes = len(times_before)
@@ -211,77 +210,107 @@ def augment_time(field, timestep, ntimepoints):
     newfield = {}
     count = 0
     for t in times_new:
-        newfield[t] = np.expand_dims(Y[:,count],axis=1)
+        tround = round(t, 10)
+        newfield[tround] = np.expand_dims(Y[:,count],axis=1)
         count = count + 1
 
     return newfield
 
-def generate_graphs(model_name, model_params, input_dir, output_dir, save = True):
+def generate_graphs(model_name, model_params, input_dir, output_dir,
+                    n_graphs_per_model, save = True):
     print('Create geometry: ' + model_name)
+    versions = []
     max_model_version = 5
     for mv in range(0, max_model_version):
         model_name_v = model_name + '.' + str(mv)
         if exists(input_dir + '/' + model_name_v + '.vtp'):
-            soln = io.read_geo(input_dir + '/' + model_name_v + '.vtp').GetOutput()
-            fields, _, p_array = io.get_all_arrays(soln)
+            versions.append(mv)
 
-            debug = False
+    failures = 0
+    max_failures = 5
+    for n_graph in range(0, n_graphs_per_model):
+        print('Adding graph ' + str(n_graph))
+        # pick a random version
+        mv = random.choice(versions)
+        model_name_v = model_name + '.' + str(mv)
+        soln = io.read_geo(input_dir + '/' + model_name_v + '.vtp').GetOutput()
+        fields, _, p_array = io.get_all_arrays(soln)
 
+        debug = False
+
+        try:
+            start = time.time()
             raw_graph = RawGraph(p_array, model_params, debug)
             area, _ = raw_graph.project(fields['area'])
             raw_graph.set_node_types(fields['BifurcationId'])
+            end = time.time()
+            elapsed_time = end - start
+            print('Graph generated in = {:0.2f} s'.format(elapsed_time))
+        except Exception as e:
+            print('Failed to generate: ' + str(e))
+            failures = failures + 1
+            if failures < max_failures:
+                print('Retrying...')
+                n_graph = n_graph - 1
+                continue
+            else:
+                print('Exiting...')
+                return False
 
-            g_pressure, g_flowrate = io.gather_pressures_flowrates(fields)
+        g_pressure, g_flowrate = io.gather_pressures_flowrates(fields)
 
-            times = [t for t in g_pressure]
-            times.sort()
+        times = [t for t in g_pressure]
+        times.sort()
 
-            # if we consider simulation from the start we skip a few timesteps
-            # because the first ones are noisy
-            if mv == 0:
-                times = times[10:]
+        # if we consider simulation from the start we skip a few timesteps
+        # because the first ones are noisy
+        if mv == 0:
+            for i in range(0,10):
+                del g_pressure[times[i]]
+                del g_flowrate[times[i]]
 
-            pressure = {}
-            for t in times:
-                pressure[t], g_pressure[t] = raw_graph.partition_and_stack_field(g_pressure[t])
+            times = times[10:]
 
+        start = time.time()
 
-            flowrate = {}
-            for t in times:
-                flowrate[t], g_flowrate[t] = raw_graph.partition_and_stack_field(g_flowrate[t])
+        pressure, g_pressure = raw_graph.partition_and_stack_fields(g_pressure)
+        flowrate, g_flowrate = raw_graph.partition_and_stack_fields(g_flowrate)
 
-            check_interpolation = True
-            if check_interpolation:
-                pathlib.Path('check_interpolation/').mkdir(parents=True, exist_ok=True)
-                folder = 'check_interpolation/' + model_name_v
-                pathlib.Path(folder).mkdir(parents=True, exist_ok=True)
+        end = time.time()
+        elapsed_time = end - start
+        print('Fields projected in = {:0.2f} s'.format(elapsed_time))
 
-                arclength_interpolated = raw_graph.compute_resampled_arclenght()
-                arclength_original = raw_graph.compute_arclenght()
+        check_interpolation = True
+        if check_interpolation:
+            pathlib.Path('check_interpolation/').mkdir(parents=True, exist_ok=True)
+            folder = 'check_interpolation/' + model_name + '.' + str(n_graph)
+            pathlib.Path(folder).mkdir(parents=True, exist_ok=True)
 
-                pt.plot_interpolated(pressure, g_pressure,
-                                  arclength_interpolated, arclength_original,
-                                  folder + '/pressure.mp4')
+            arclength_interpolated = raw_graph.compute_resampled_arclenght()
+            arclength_original = raw_graph.compute_arclenght()
 
-                pt.plot_interpolated(flowrate, g_flowrate,
-                                  arclength_interpolated, arclength_original,
-                                  folder + '/flowrate.mp4')
+            pt.plot_interpolated(pressure, g_pressure,
+                              arclength_interpolated, arclength_original,
+                              folder + '/pressure.mp4')
 
+            pt.plot_interpolated(flowrate, g_flowrate,
+                              arclength_interpolated, arclength_original,
+                              folder + '/flowrate.mp4')
 
-            print('Augmenting timesteps')
-            pressure = augment_time(pressure, model_params['timestep'],
-                                              model_params['n_time_points'])
-            flowrate = augment_time(flowrate, model_params['timestep'],
-                                              model_params['n_time_points'])
+        print('Augmenting timesteps')
+        ntimepoints = random.randint(model_params['min_timepoints'],
+                                     model_params['max_timepoints'])
+        pressure = augment_time(pressure, model_params, ntimepoints)
+        flowrate = augment_time(flowrate, model_params, ntimepoints)
 
-            print('Generating graphs')
-            fixed_graph = create_fixed_graph(raw_graph, raw_graph.stack(area))
+        print('Generating graphs')
+        fixed_graph = create_fixed_graph(raw_graph, raw_graph.stack(area))
 
-            print('Adding fields')
-            graphs = add_fields(fixed_graph, pressure, flowrate)
-            if save:
-                dgl.save_graphs(output_dir + model_name_v + '.grph', graphs)
-    return graphs
+        print('Adding fields')
+        graphs = add_fields(fixed_graph, pressure, flowrate)
+        if save:
+            dgl.save_graphs(output_dir + model_name + '.' + str(n_graph) + '.grph', graphs)
+    return True
 
 if __name__ == "__main__":
     input_dir = 'vtps'
@@ -291,6 +320,14 @@ if __name__ == "__main__":
     for model in params:
         params[model]['timestep'] = timesteps[model]
 
+    failed_models = []
+    n_graphs_per_model = 20
     for model in params:
         print('Processing {}'.format(model))
-        generate_graphs(model, params[model], input_dir, output_dir)
+        success = generate_graphs(model, params[model], input_dir, output_dir,
+                        n_graphs_per_model)
+        if not success:
+            failed_models.append(model)
+
+    print('Failed models:')
+    print(failed_models)

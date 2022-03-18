@@ -218,7 +218,7 @@ def plot_interpolated(field_interpolated, field_original,
     for t in field_interpolated:
         times.append(t)
 
-    nframes = 5 * 60
+    nframes = 3 * 30
     indices = np.floor(np.linspace(0,len(field_interpolated)-1,nframes)).astype(int)
 
     selected_times = []
@@ -246,11 +246,11 @@ def plot_interpolated(field_interpolated, field_original,
     def animation_frame(i):
         df = selected_field_interpolated[i]
         df = np.concatenate((np.expand_dims(arclength_interpolated,axis=1), df),axis = 1)
-        scatter_original.set_offsets(df)
-        scatter_original_2.set_offsets(df)
+        scatter_interpol.set_offsets(df)
         df = selected_field_original[i]
         df = np.concatenate((np.expand_dims(arclength_original,axis=1), df),axis = 1)
-        scatter_interpol.set_offsets(df)
+        scatter_original.set_offsets(df)
+        scatter_original_2.set_offsets(df)
         ax[0].set_title('{:.2f} s'.format(float(times[i])))
         ax[0].set_xlim(arclength_interpolated[0],arclength_interpolated[-1])
         ax[0].set_ylim(np.min(df[:,1]),np.max(df[:,1]))
