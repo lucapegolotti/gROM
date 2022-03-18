@@ -210,6 +210,61 @@ def plot_geo_with_circles(graph,cmap = cm.get_cmap("viridis")):
     ax.set_ylim((minx[1],maxx[1]))
     ax.set_zlim((minx[2],maxx[2]))
 
+def plot_interpolated(field_interpolated, field_original,
+                      arclength_interpolated, arclength_original,
+                      filename):
+
+    times = []
+    for t in field_interpolated:
+        times.append(t)
+
+    nframes = 5 * 60
+    indices = np.floor(np.linspace(0,len(field_interpolated)-1,nframes)).astype(int)
+
+    selected_times = []
+    selected_field_interpolated = []
+    selected_field_original = []
+    for ind in indices:
+        selected_field_interpolated.append(field_interpolated[times[ind]])
+        selected_field_original.append(field_original[times[ind]])
+        selected_times.append(times[ind])
+
+    times = selected_times
+
+    fig, ax = plt.subplots(2, dpi=284)
+
+    scatter_original = ax[0].scatter(arclength_original, \
+                                   selected_field_original[0], color='black', \
+                                   s = 1.5, alpha = 0.3)
+    scatter_interpol = ax[0].scatter(arclength_interpolated, \
+                                   selected_field_interpolated[0], color='red', \
+                                   s = 1)
+    scatter_original_2 = ax[1].scatter(arclength_original, \
+                                   selected_field_original[0], color='black', \
+                                   s = 1.5, alpha = 1)
+
+    def animation_frame(i):
+        df = selected_field_interpolated[i]
+        df = np.concatenate((np.expand_dims(arclength_interpolated,axis=1), df),axis = 1)
+        scatter_original.set_offsets(df)
+        scatter_original_2.set_offsets(df)
+        df = selected_field_original[i]
+        df = np.concatenate((np.expand_dims(arclength_original,axis=1), df),axis = 1)
+        scatter_interpol.set_offsets(df)
+        ax[0].set_title('{:.2f} s'.format(float(times[i])))
+        ax[0].set_xlim(arclength_interpolated[0],arclength_interpolated[-1])
+        ax[0].set_ylim(np.min(df[:,1]),np.max(df[:,1]))
+        ax[1].set_xlim(arclength_interpolated[0],arclength_interpolated[-1])
+        ax[1].set_ylim(np.min(df[:,1]),np.max(df[:,1]))
+        return scatter_original,
+
+    anim = animation.FuncAnimation(fig, animation_frame,
+                                   frames=len(times),
+                                   interval=20)
+
+    writervideo = animation.FFMpegWriter(fps=60)
+    anim.save(filename, writer = writervideo)
+
 def plot_linear(pressures_branch_pred, flowrates_branch_pred,
                 pressures_junction_pred, flowrates_junction_pred,
                 pressures_branch_real, flowrates_branch_real,

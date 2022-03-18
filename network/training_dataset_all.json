@@ -42,6 +42,6 @@
                 "0154_0001",
                 "0174_0000",
                 "0175_0000"],
-    "training": 0.9,
-    "validation": 0.1
+    "training": 0.5,
+    "validation": 0.5
 }

@@ -23,6 +23,7 @@ import training
 import plot_tools as ptools
 import matplotlib.cm as cm
 import shutil
+import pathlib
 
 def test_train(gnn_model, model_name, dataset):
     num_examples = len(dataset)
@@ -380,11 +381,11 @@ if __name__ == "__main__":
     tot_continuity = 0
     if os.path.exists('results_validation'):
         shutil.rmtree('results_validation')
-    training.create_directory('results_validation')
+    pathlib.Path('results_validation').mkdir(parents=True, exist_ok=True)
     for i in range(num_validation):
         model_name = params['dataset_parameters']['split']['validation'][i]
         print('model name = ' + model_name)
-        training.create_directory('results_validation/' + model_name)
+        pathlib.Path('results_validation/' + model_name).mkdir(parents=True, exist_ok=True)
         err_p_branch, err_q_branch, err_p_junction, \
         err_q_junction, err_p, err_q, cont = test_rollout(gnn_model, params,
                                                    dataset, index_graph = i,
@@ -425,11 +426,11 @@ if __name__ == "__main__":
     tot_continuity = 0
     if os.path.exists('results_train'):
         shutil.rmtree('results_train')
-    training.create_directory('results_train')
+    pathlib.Path('results_train').mkdir(parents=True, exist_ok=True)
     for i in range(num_train):
         model_name = params['dataset_parameters']['split']['train'][i]
         print('model name = ' + model_name)
-        training.create_directory('results_train/' + model_name)
+        pathlib.Path('results_train/' + model_name).mkdir(parents=True, exist_ok=True)
         err_p_branch, err_q_branch, err_p_junction, \
         err_q_junction, err_p, err_q, cont = test_rollout(gnn_model, params,
                                                   dataset, index_graph = i,

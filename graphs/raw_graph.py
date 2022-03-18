@@ -211,12 +211,12 @@ class RawGraph:
                             ids[i][j] = fatherid
                             j = j + 1
 
-        bid = self.project(bifurcation_id)
+        bid, _ = self.project(bifurcation_id)
         for i in range(len(bid)):
             bid[i] = np.round(bid[i]).astype(int)
         fix_singular_points(bid, -1)
         check_inlets(bid)
-        self.bifurcation_id = self.project(bifurcation_id)
+        self.bifurcation_id, _ = self.project(bifurcation_id)
         for i in range(len(bid)):
             self.bifurcation_id[i] = np.round(self.bifurcation_id[i]).astype(int)
         fix_singular_points(self.bifurcation_id, -1)
@@ -304,7 +304,7 @@ class RawGraph:
 
                 plt.show()
 
-        return proj_field
+        return proj_field, sliced_field
 
     def resample(self):
         resampled_portions = []
@@ -451,11 +451,35 @@ class RawGraph:
 
         return res
 
-    def partition_and_stack_field(self, field):
-        p_field = self.project(field)
-        res = self.stack(p_field)
+    def compute_arclenght(self):
+        arclength = []
+        offset = 0
+        for portion in self.portions:
+            arclength.append(offset)
+            for npoint in range(portion.shape[0]-1):
+                arclength.append(np.linalg.norm(portion[npoint+1,:] - portion[npoint,:]) + \
+                                 arclength[-1])
+            offset = arclength[-1]
 
-        return res
+        return arclength
+
+    def compute_resampled_arclenght(self):
+        arclength = []
+        offset = 0
+        for portion in self.resampled_portions:
+            arclength.append(offset)
+            for npoint in range(portion.shape[0]-1):
+                arclength.append(np.linalg.norm(portion[npoint+1,:] - portion[npoint,:]) + \
+                                 arclength[-1])
+            offset = arclength[-1]
+
+        return arclength
+
+    def partition_and_stack_field(self, field):
+        p_field, s_field = self.project(field)
+        res = self.stack(p_field)
+        s_field_stacked = self.stack(s_field)
+        return res, s_field_stacked
 
     def create_homogeneous_graph(self):
         def seq_array(minv, maxv):

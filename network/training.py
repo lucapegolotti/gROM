@@ -4,6 +4,8 @@ import os
 # this fixes a problem with openmp https://github.com/dmlc/xgboost/issues/1715
 # os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
+sys.path.append("../tools")
+
 import dgl
 import torch
 import torch.distributed as dist
@@ -21,7 +23,6 @@ import random
 import time
 import json
 import pathlib
-
 
 def mse(input, target):
     return ((input - target) ** 2).mean()
@@ -119,9 +120,9 @@ def evaluate_model(gnn_model, train_dataloader, loss, metric = None,
                 global_metric = global_metric + metric_v.detach().numpy()
 
             if c_optimizer != None:
-                optimizer.zero_grad()
-                loss_v.backward()
-                optimizer.step()
+               optimizer.zero_grad()
+               loss_v.backward()
+               optimizer.step()
             count = count + 1
 
         return {'global_loss': global_loss, 'count': count,
@@ -139,7 +140,7 @@ def train_gnn_model(gnn_model, train, validation, optimizer_name, train_params,
                     checkpoint_fct = None, dataset_params = None):
     # we only compute the coefs_dict on the train_dataset
     train_dataset = pp.generate_dataset(train, dataset_params = dataset_params,
-                                        augment = True)
+                                        train = True)
     coefs_dict = train_dataset.coefs_dict
     print('Dataset contains {:.0f} graphs'.format(len(train_dataset)))
 
@@ -194,7 +195,8 @@ def train_gnn_model(gnn_model, train, validation, optimizer_name, train_params,
 
     if optimizer_name == 'adam':
         optimizer = torch.optim.Adam(gnn_model.parameters(),
-                                     train_params['learning_rate'])
+                                     train_params['learning_rate'],
+                                     weight_decay=train_params['weight_decay'])
     elif optimizer_name == 'sgd':
         optimizer = torch.optim.SGD(gnn_model.parameters(),
                                     train_params['learning_rate'],
@@ -220,6 +222,13 @@ def train_gnn_model(gnn_model, train, validation, optimizer_name, train_params,
     ramp_epochs = int(np.floor(nepochs/2))
 
     for epoch in range(nepochs):
+        if epoch >= ramp_epochs:
+            train_dataset.sample_noise(dataset_params['rate_noise'])
+            validation_dataset.sample_noise(dataset_params['rate_noise'])
+        else:
+            train_dataset.sample_noise(dataset_params['rate_noise'] * epoch/ramp_epochs)
+            validation_dataset.sample_noise(dataset_params['rate_noise'] * epoch/ramp_epochs)
+
         train_results, val_results, elapsed = evaluate_model(gnn_model, train_dataloader,
                                                              mse, weighted_mae, optimizer,
                                                              validation_dataloader = validation_dataloader,
@@ -241,14 +250,6 @@ def train_gnn_model(gnn_model, train, validation, optimizer_name, train_params,
             if epoch in chckp_epochs:
                 checkpoint_fct(global_loss/count)
 
-        if epoch >= 0:
-            if epoch >= ramp_epochs:
-                train_dataset.sample_noise(dataset_params['rate_noise'])
-                validation_dataset.sample_noise(dataset_params['rate_noise'])
-            else:
-                train_dataset.sample_noise(dataset_params['rate_noise'] * epoch/ramp_epochs)
-                validation_dataset.sample_noise(dataset_params['rate_noise'] * epoch/ramp_epochs)
-
     # compute final loss
     train_results, val_results, elapsed = evaluate_model(gnn_model, train_dataloader,
                                                          mse, weighted_mae,
@@ -267,12 +268,6 @@ def train_gnn_model(gnn_model, train, validation, optimizer_name, train_params,
 
     return gnn_model, train_dataloader, train_results['global_loss']/train_results['count'], \
            train_results['global_metric']/train_results['count'], coefs_dict, train_dataset
-
-def create_directory(path):
-    try:
-        os.mkdir(path)
-    except OSError as exc:
-        pass
 
 def prepare_dataset(dataset_json):
     dataset = dataset_json['dataset']
@@ -387,11 +382,14 @@ if __name__ == "__main__":
                     'batch_size': 100,
                     'nepochs': 200,
                     'continuity_coeff': -3,
-                    'bc_coeff': -5}
+                    'bc_coeff': -5,
+                    'weight_decay': 1e-5}
     dataset_params = {'normalization': 'standard',
-                      'rate_noise': 60,
+                      'rate_noise': 1e-5,
                       'label_normalization': 'min_max',
-                      'augment_data': 1}
+                      'augment_data': 0,
+                      'add_noise': False,
+                      'noise_stdv': 1e-10}
 
     start = time.time()
     launch_training(dataset_json,  'adam', params_dict, train_params,

@@ -20,6 +20,8 @@ from scipy import interpolate
 from matplotlib import animation
 import json
 from raw_graph import RawGraph
+import plot_tools as pt
+import pathlib
 
 DTYPE = np.float32
 
@@ -214,18 +216,37 @@ def generate_graphs(model_name, model_params, input_dir, output_dir, save = True
     debug = False
 
     raw_graph = RawGraph(p_array, model_params, debug)
-    area = raw_graph.project(fields['area'])
+    area, _ = raw_graph.project(fields['area'])
     raw_graph.set_node_types(fields['BifurcationId'])
 
     g_pressure, g_flowrate = io.gather_pressures_flowrates(fields)
 
     pressure = {}
     for t in g_pressure:
-        pressure[t] = raw_graph.partition_and_stack_field(g_pressure[t])
+        pressure[t], g_pressure[t] = raw_graph.partition_and_stack_field(g_pressure[t])
+
 
     flowrate = {}
     for t in g_flowrate:
-        flowrate[t] = raw_graph.partition_and_stack_field(g_flowrate[t])
+        flowrate[t], g_flowrate[t] = raw_graph.partition_and_stack_field(g_flowrate[t])
+
+    check_interpolation = True
+    if check_interpolation:
+        pathlib.Path('check_interpolation/').mkdir(parents=True, exist_ok=True)
+        folder = 'check_interpolation/' + model_name
+        pathlib.Path(folder).mkdir(parents=True, exist_ok=True)
+
+        arclength_interpolated = raw_graph.compute_resampled_arclenght()
+        arclength_original = raw_graph.compute_arclenght()
+
+        pt.plot_interpolated(pressure, g_pressure,
+                          arclength_interpolated, arclength_original,
+                          folder + '/pressure.mp4')
+
+        pt.plot_interpolated(flowrate, g_flowrate,
+                          arclength_interpolated, arclength_original,
+                          folder + '/flowrate.mp4')
+
 
     print('Augmenting timesteps')
     pressure = augment_time(pressure, model_params['period'],

@@ -7,3 +7,4 @@ models
 gromenv
 *.mp4
 results_*
+check_interpolation

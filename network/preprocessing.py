@@ -5,7 +5,7 @@ import os
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
 sys.path.append("../graphs")
-sys.path.append("../graphs/core")
+sys.path.append("../tools")
 
 import dgl
 import torch
@@ -650,7 +650,31 @@ def randomize_graph(graph):
 
     return newgraph
 
-def generate_dataset(model_names, coefs_dict = None, dataset_params = None, augment = False):
+def add_noise(graph, coefs, stdv):
+    nnodes = graph.nodes['branch'].data['x'].shape[0] + \
+             graph.nodes['junction'].data['x'].shape[0]
+
+    noise_p = np.random.normal(0, stdv, (nnodes, 1))
+
+    # for flowrate, we add a scalar in order to ensure flow conservation
+    noise_q = np.random.normal(0, stdv, 1)
+    ntimes = graph.nodes['params'].data['times'].shape[1]
+
+    def per_node_type(node_type, t):
+        graph.nodes[node_type].data['pressure_' + str(t)] = \
+            graph.nodes[node_type].data['pressure_' + str(t)] + \
+            noise_p[graph.nodes[node_type].data['mask']]
+
+        graph.nodes[node_type].data['flowrate_' + str(t)] = \
+            graph.nodes[node_type].data['flowrate_' + str(t)] + noise_q
+
+    for t in range(ntimes):
+        per_node_type('branch', t)
+        per_node_type('junction', t)
+        per_node_type('inlet', t)
+        per_node_type('outlet', t)
+
+def generate_dataset(model_names, coefs_dict = None, dataset_params = None, train = False):
     graphs = []
     for model_name in model_names:
         graphs.append(load_graphs('../graphs/data/' + model_name + '.grph')[0][0])
@@ -672,11 +696,12 @@ def generate_dataset(model_names, coefs_dict = None, dataset_params = None, augm
     print('average n. nodes = ' + str(nnodes / len(graphs)))
     print('average n. edges = ' + str(nedges / len(graphs)))
 
-    if augment:
-        num_augmentation = dataset_params['augment_data']
-        for i in range(num_augmentation):
-            for igraph in range(numgraphs):
-                graphs.append(randomize_graph(graphs[igraph]))
+    if dataset_params != None:
+        if train:
+            num_augmentation = dataset_params['augment_data']
+            for i in range(num_augmentation):
+                for igraph in range(numgraphs):
+                    graphs.append(randomize_graph(graphs[igraph]))
 
     normalization_type = 'standard'
     if dataset_params != None:
@@ -687,5 +712,11 @@ def generate_dataset(model_names, coefs_dict = None, dataset_params = None, augm
         label_normalization = dataset_params['label_normalization']
 
     graphs, coefs_dict = normalize(graphs, normalization_type, coefs_dict)
+    if dataset_params != None:
+        if train:
+            if dataset_params['add_noise']:
+                stdv = dataset_params['noise_stdv']
+                for i in range(len(graphs)):
+                    add_noise(graphs[i], coefs_dict, stdv)
 
     return DGL_Dataset(graphs, label_normalization, coefs_dict)
