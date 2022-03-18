@@ -376,7 +376,6 @@ class RawGraph:
                                                 r_portion[:,1],
                                                 r_portion[:,2]], s=0, k = 3)
 
-
             x, y, z = interpolate.splev(u, tck, der = 1)
             tangent_portion = np.vstack((x,y,z)).transpose()
             tangent_portion = tangent_portion

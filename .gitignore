@@ -1,6 +1,5 @@
 .DS_Store
-vtps
-vtps_old
+vtps*
 data
 __pycache__
 models

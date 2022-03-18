@@ -22,6 +22,7 @@ import json
 from raw_graph import RawGraph
 import plot_tools as pt
 import pathlib
+from os.path import exists
 
 DTYPE = np.float32
 
@@ -126,12 +127,16 @@ def create_fixed_graph(raw_graph, area):
     graph.nodes['junction'].data['area'] = torch.from_numpy(area[junct_dict['mask']].astype(DTYPE))
     graph.nodes['junction'].data['dt'] = torch.ones(area[junct_dict['mask']].shape)
     graph.nodes['junction'].data['tangent'] = torch.from_numpy(junct_dict['tangent'])
-    max_bif_degree = 16
-    graph.nodes['junction'].data['node_type'] = torch.nn.functional.one_hot(
-                                                torch.from_numpy(
-                                                np.squeeze(
-                                                junct_dict['node_type'].astype(int))),
-                                                num_classes=max_bif_degree)
+    max_bif_degree = 20
+    try:
+        graph.nodes['junction'].data['node_type'] = torch.nn.functional.one_hot(
+                                                    torch.from_numpy(
+                                                    np.squeeze(
+                                                    junct_dict['node_type'].astype(int))),
+                                                    num_classes=max_bif_degree)
+    except RuntimeError:
+        print("max_bif_degree < " + str(np.max(np.squeeze(junct_dict['node_type'].astype(int)))))
+        raise RuntimeError
 
     graph.nodes['inlet'].data['mask'] = torch.from_numpy(inlet_dict['mask'])
     graph.nodes['inlet'].data['area'] = torch.from_numpy(area[inlet_dict['mask']].astype(DTYPE))
@@ -181,14 +186,17 @@ def add_fields(graph, pressure, velocity):
 
     return newgraph
 
-def augment_time(field, period, ntimepoints):
+def augment_time(field, timestep, ntimepoints):
     times_before = [t for t in field]
     times_before.sort()
     ntimes = len(times_before)
 
     npoints = field[times_before[0]].shape[0]
 
-    times_scaled = np.linspace(0, period, ntimes)
+    times_scaled = np.array([t * timestep for t in times_before])
+    times_scaled = times_scaled - times_scaled[0]
+    period = times_scaled[-1]
+
     times_new = np.linspace(0, period, ntimepoints)
 
     Y = np.zeros((npoints, ntimepoints))
@@ -210,63 +218,79 @@ def augment_time(field, period, ntimepoints):
 
 def generate_graphs(model_name, model_params, input_dir, output_dir, save = True):
     print('Create geometry: ' + model_name)
-    soln = io.read_geo(input_dir + '/' + model_name + '.vtp').GetOutput()
-    fields, _, p_array = io.get_all_arrays(soln)
+    max_model_version = 5
+    for mv in range(0, max_model_version):
+        model_name_v = model_name + '.' + str(mv)
+        if exists(input_dir + '/' + model_name_v + '.vtp'):
+            soln = io.read_geo(input_dir + '/' + model_name_v + '.vtp').GetOutput()
+            fields, _, p_array = io.get_all_arrays(soln)
 
-    debug = False
+            debug = False
 
-    raw_graph = RawGraph(p_array, model_params, debug)
-    area, _ = raw_graph.project(fields['area'])
-    raw_graph.set_node_types(fields['BifurcationId'])
+            raw_graph = RawGraph(p_array, model_params, debug)
+            area, _ = raw_graph.project(fields['area'])
+            raw_graph.set_node_types(fields['BifurcationId'])
 
-    g_pressure, g_flowrate = io.gather_pressures_flowrates(fields)
+            g_pressure, g_flowrate = io.gather_pressures_flowrates(fields)
 
-    pressure = {}
-    for t in g_pressure:
-        pressure[t], g_pressure[t] = raw_graph.partition_and_stack_field(g_pressure[t])
+            times = [t for t in g_pressure]
+            times.sort()
 
+            # if we consider simulation from the start we skip a few timesteps
+            # because the first ones are noisy
+            if mv == 0:
+                times = times[10:]
 
-    flowrate = {}
-    for t in g_flowrate:
-        flowrate[t], g_flowrate[t] = raw_graph.partition_and_stack_field(g_flowrate[t])
-
-    check_interpolation = True
-    if check_interpolation:
-        pathlib.Path('check_interpolation/').mkdir(parents=True, exist_ok=True)
-        folder = 'check_interpolation/' + model_name
-        pathlib.Path(folder).mkdir(parents=True, exist_ok=True)
-
-        arclength_interpolated = raw_graph.compute_resampled_arclenght()
-        arclength_original = raw_graph.compute_arclenght()
-
-        pt.plot_interpolated(pressure, g_pressure,
-                          arclength_interpolated, arclength_original,
-                          folder + '/pressure.mp4')
-
-        pt.plot_interpolated(flowrate, g_flowrate,
-                          arclength_interpolated, arclength_original,
-                          folder + '/flowrate.mp4')
+            pressure = {}
+            for t in times:
+                pressure[t], g_pressure[t] = raw_graph.partition_and_stack_field(g_pressure[t])
 
 
-    print('Augmenting timesteps')
-    pressure = augment_time(pressure, model_params['period'],
-                                      model_params['n_time_points'])
-    flowrate = augment_time(flowrate, model_params['period'],
-                                      model_params['n_time_points'])
+            flowrate = {}
+            for t in times:
+                flowrate[t], g_flowrate[t] = raw_graph.partition_and_stack_field(g_flowrate[t])
 
-    print('Generating graphs')
-    fixed_graph = create_fixed_graph(raw_graph, raw_graph.stack(area))
+            check_interpolation = True
+            if check_interpolation:
+                pathlib.Path('check_interpolation/').mkdir(parents=True, exist_ok=True)
+                folder = 'check_interpolation/' + model_name_v
+                pathlib.Path(folder).mkdir(parents=True, exist_ok=True)
 
-    print('Adding fields')
-    graphs = add_fields(fixed_graph, pressure, flowrate)
-    if save:
-        dgl.save_graphs(output_dir + model_name + '.grph', graphs)
+                arclength_interpolated = raw_graph.compute_resampled_arclenght()
+                arclength_original = raw_graph.compute_arclenght()
+
+                pt.plot_interpolated(pressure, g_pressure,
+                                  arclength_interpolated, arclength_original,
+                                  folder + '/pressure.mp4')
+
+                pt.plot_interpolated(flowrate, g_flowrate,
+                                  arclength_interpolated, arclength_original,
+                                  folder + '/flowrate.mp4')
+
+
+            print('Augmenting timesteps')
+            pressure = augment_time(pressure, model_params['timestep'],
+                                              model_params['n_time_points'])
+            flowrate = augment_time(flowrate, model_params['timestep'],
+                                              model_params['n_time_points'])
+
+            print('Generating graphs')
+            fixed_graph = create_fixed_graph(raw_graph, raw_graph.stack(area))
+
+            print('Adding fields')
+            graphs = add_fields(fixed_graph, pressure, flowrate)
+            if save:
+                dgl.save_graphs(output_dir + model_name_v + '.grph', graphs)
     return graphs
 
 if __name__ == "__main__":
     input_dir = 'vtps'
     output_dir = 'data/'
     params = json.load(open(input_dir + '/dataset_info.json'))
+    timesteps = json.load(open(input_dir + '/timesteps.json'))
+    for model in params:
+        params[model]['timestep'] = timesteps[model]
+
     for model in params:
         print('Processing {}'.format(model))
         generate_graphs(model, params[model], input_dir, output_dir)
