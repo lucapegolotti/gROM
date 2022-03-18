@@ -5,7 +5,7 @@ import os
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
 sys.path.append("../graphs")
-sys.path.append("../graphs/core")
+sys.path.append("../tools")
 
 import dgl
 import torch
@@ -24,21 +24,29 @@ def set_state(graph, state_dict, next_state_dict = None, noise_dict = None, coef
         if next_state_dict != None:
             graph.nodes[node_type].data['pressure_next'] = next_state_dict['pressure'][node_type]
             graph.nodes[node_type].data['flowrate_next'] = next_state_dict['flowrate'][node_type]
-            if noise_dict == None  or node_type != 'inner':
+            if noise_dict == None:
                 graph.nodes[node_type].data['n_labels'] = torch.cat((graph.nodes[node_type].data['pressure_next'] - \
                                                                      graph.nodes[node_type].data['pressure'], \
                                                                      graph.nodes[node_type].data['flowrate_next'] - \
                                                                      graph.nodes[node_type].data['flowrate']), 1).float()
 
             else:
-                graph.nodes[node_type].data['n_labels'] = torch.cat((graph.nodes[node_type].data['pressure_next'] - \
-                                                                     graph.nodes[node_type].data['pressure'] - \
-                                                                     noise_dict['pressure'], \
-                                                                     graph.nodes[node_type].data['flowrate_next'] - \
-                                                                     graph.nodes[node_type].data['flowrate'] - \
-                                                                     noise_dict['flowrate']), 1).float()
+                if node_type == 'branch':
+                    graph.nodes[node_type].data['n_labels'] = torch.cat((graph.nodes[node_type].data['pressure_next'] - \
+                                                                         graph.nodes[node_type].data['pressure'] - \
+                                                                         noise_dict['pressure_branch'], \
+                                                                         graph.nodes[node_type].data['flowrate_next'] - \
+                                                                         graph.nodes[node_type].data['flowrate'] - \
+                                                                         noise_dict['flowrate_branch']), 1).float()
+                elif node_type == 'junction':
+                    graph.nodes[node_type].data['n_labels'] = torch.cat((graph.nodes[node_type].data['pressure_next'] - \
+                                                                         graph.nodes[node_type].data['pressure'] - \
+                                                                         noise_dict['pressure_junct'], \
+                                                                         graph.nodes[node_type].data['flowrate_next'] - \
+                                                                         graph.nodes[node_type].data['flowrate'] - \
+                                                                         noise_dict['flowrate_junct']), 1).float()
 
-        if node_type == 'inner' and coefs_label != None:
+        if (node_type == 'branch' or node_type == 'junction') and coefs_label != None:
             nlabels = graph.nodes[node_type].data['n_labels'].shape[1]
             for i in range(nlabels):
                 colmn = graph.nodes[node_type].data['n_labels'][:,i]
@@ -51,21 +59,36 @@ def set_state(graph, state_dict, next_state_dict = None, noise_dict = None, coef
                 else:
                     print('Label normalization {} does not exist'.format(coefs_label['normalization_type']))
 
-        if node_type == 'inner':
+        if node_type == 'branch':
             if noise_dict == None:
                 graph.nodes[node_type].data['n_features'] = torch.cat((graph.nodes[node_type].data['pressure'], \
                                                                        graph.nodes[node_type].data['flowrate'], \
                                                                        graph.nodes[node_type].data['area'], \
-                                                                       graph.nodes[node_type].data['node_type'],
                                                                        graph.nodes[node_type].data['tangent'],
                                                                        graph.nodes[node_type].data['dt']), 1).float()
             else:
                 graph.nodes[node_type].data['n_features'] = torch.cat((graph.nodes[node_type].data['pressure'] + \
-                                                                       noise_dict['pressure'], \
+                                                                       noise_dict['pressure_branch'], \
                                                                        graph.nodes[node_type].data['flowrate'] + \
-                                                                       noise_dict['flowrate'], \
+                                                                       noise_dict['flowrate_branch'], \
                                                                        graph.nodes[node_type].data['area'], \
-                                                                       graph.nodes[node_type].data['node_type'],
+                                                                       graph.nodes[node_type].data['tangent'],
+                                                                       graph.nodes[node_type].data['dt']), 1).float()
+        elif node_type == 'junction':
+            if noise_dict == None:
+                graph.nodes[node_type].data['n_features'] = torch.cat((graph.nodes[node_type].data['pressure'], \
+                                                                       graph.nodes[node_type].data['flowrate'], \
+                                                                       graph.nodes[node_type].data['area'], \
+                                                                       graph.nodes[node_type].data['node_type'], \
+                                                                       graph.nodes[node_type].data['tangent'],
+                                                                       graph.nodes[node_type].data['dt']), 1).float()
+            else:
+                graph.nodes[node_type].data['n_features'] = torch.cat((graph.nodes[node_type].data['pressure'] + \
+                                                                       noise_dict['pressure_junct'], \
+                                                                       graph.nodes[node_type].data['flowrate'] + \
+                                                                       noise_dict['flowrate_junct'], \
+                                                                       graph.nodes[node_type].data['area'], \
+                                                                       graph.nodes[node_type].data['node_type'], \
                                                                        graph.nodes[node_type].data['tangent'],
                                                                        graph.nodes[node_type].data['dt']), 1).float()
         elif node_type == 'inlet':
@@ -89,17 +112,26 @@ def set_state(graph, state_dict, next_state_dict = None, noise_dict = None, coef
                                                                        graph.nodes[node_type].data['pressure_next'], \
                                                                        graph.nodes[node_type].data['area']), 1).float()
     def per_edge_type(edge_type):
-        if edge_type == 'inner_to_inner':
+        if edge_type == 'branch_to_branch' or \
+           edge_type == 'junction_to_junction' or \
+           edge_type == 'branch_to_junction' or \
+           edge_type == 'junction_to_branch':
             graph.edges[edge_type].data['e_features'] = graph.edges[edge_type].data['position'].float()
         else:
             graph.edges[edge_type].data['e_features'] = torch.cat((graph.edges[edge_type].data['distance'][:,None],
                                                                    graph.edges[edge_type].data['physical_same'][:,None]), 1).float()
-    per_node_type('inner')
+    per_node_type('branch')
+    per_node_type('junction')
     per_node_type('inlet')
     per_node_type('outlet')
-    per_edge_type('inner_to_inner')
-    per_edge_type('in_to_inner')
-    per_edge_type('out_to_inner')
+    per_edge_type('branch_to_branch')
+    per_edge_type('junction_to_junction')
+    per_edge_type('branch_to_junction')
+    per_edge_type('junction_to_branch')
+    per_edge_type('in_to_branch')
+    per_edge_type('in_to_junction')
+    per_edge_type('out_to_branch')
+    per_edge_type('out_to_junction')
 
 
 def set_bcs(graph, state_dict):
@@ -148,26 +180,42 @@ class DGL_Dataset(DGLDataset):
                 del graph.nodes[ntype].data[data_name]
 
         self.lightgraphs = []
-        self.noise_pressures = []
-        self.noise_flowrates = []
+        self.noise_pressures_branch = []
+        self.noise_flowrates_branch = []
+        self.noise_pressures_junct = []
+        self.noise_flowrates_junct = []
         all_labels = None
         for igraph in range(len(self.graphs)):
             lightgraph = copy.deepcopy(self.graphs[igraph])
 
-            for ntype in ['inner', 'inlet', 'outlet']:
+            for ntype in ['branch', 'junction', 'inlet', 'outlet']:
                 per_node_type(lightgraph, ntype, 'pressure')
                 per_node_type(lightgraph, ntype, 'flowrate')
 
             self.lightgraphs.append(lightgraph)
 
-            ninner_nodes = self.graphs[igraph].nodes['inner'].data['pressure_0'].shape[0]
-            noise_pressure = np.zeros((ninner_nodes,self.times[igraph].shape[1]))
-            noise_flowrate = np.zeros((ninner_nodes,self.times[igraph].shape[1]))
-            self.noise_pressures.append(noise_pressure)
-            self.noise_flowrates.append(noise_flowrate)
+            nbranch_nodes = self.graphs[igraph].nodes['branch'].data['pressure_0'].shape[0]
+            noise_pressure = np.zeros((nbranch_nodes,self.times[igraph].shape[1]))
+            noise_flowrate = np.zeros((nbranch_nodes,self.times[igraph].shape[1]))
+            self.noise_pressures_branch.append(noise_pressure)
+            self.noise_flowrates_branch.append(noise_flowrate)
+            njunction_nodes = self.graphs[igraph].nodes['junction'].data['pressure_0'].shape[0]
+            noise_pressure = np.zeros((njunction_nodes,self.times[igraph].shape[1]))
+            noise_flowrate = np.zeros((njunction_nodes,self.times[igraph].shape[1]))
+            self.noise_pressures_junct.append(noise_pressure)
+            self.noise_flowrates_junct.append(noise_flowrate)
+
             for itime in range(self.times[igraph].shape[1] - 1):
                 self.prep_item(igraph, itime)
-                curlabels = self.lightgraphs[igraph].nodes['inner'].data['n_labels']
+                curlabels = self.lightgraphs[igraph].nodes['branch'].data['n_labels']
+                if all_labels == None:
+                    all_labels = curlabels
+                else:
+                    all_labels = torch.cat((all_labels, curlabels), axis = 0)
+
+            for itime in range(self.times[igraph].shape[1] - 1):
+                self.prep_item(igraph, itime)
+                curlabels = self.lightgraphs[igraph].nodes['junction'].data['n_labels']
                 if all_labels == None:
                     all_labels = curlabels
                 else:
@@ -181,21 +229,26 @@ class DGL_Dataset(DGLDataset):
                             'normalization_type': self.label_normalization}
 
     def sample_noise(self, rate):
-        ngraphs = len(self.noise_pressures)
+        ngraphs = len(self.noise_pressures_branch)
         for igraph in range(ngraphs):
-            dt = float(self.graphs[igraph].nodes['inner'].data['dt'][0])
+            dt = float(self.graphs[igraph].nodes['branch'].data['dt'][0])
             dt = invert_normalize_function(dt, 'dt', self.coefs_dict)
             actual_rate = rate * dt
-            nnodes = self.noise_pressures[igraph].shape[0]
+            nnodes_branch = self.noise_pressures_branch[igraph].shape[0]
+            nnodes_junction = self.noise_pressures_junct[igraph].shape[0]
             for index in range(1,self.times[igraph].shape[1]-1):
-                self.noise_pressures[igraph][:,index] = np.random.normal(0, actual_rate, (nnodes)) + self.noise_pressures[igraph][:,index-1]
-                self.noise_flowrates[igraph][:,index] = np.random.normal(0, actual_rate, (nnodes)) + self.noise_flowrates[igraph][:,index-1]
+                self.noise_pressures_branch[igraph][:,index] = np.random.normal(0, actual_rate, (nnodes_branch)) + self.noise_pressures_branch[igraph][:,index-1]
+                self.noise_flowrates_branch[igraph][:,index] = np.random.normal(0, actual_rate, (nnodes_branch)) + self.noise_flowrates_branch[igraph][:,index-1]
+                self.noise_pressures_junct[igraph][:,index] = np.random.normal(0, actual_rate, (nnodes_junction)) + self.noise_pressures_junct[igraph][:,index-1]
+                self.noise_flowrates_junct[igraph][:,index] = np.random.normal(0, actual_rate, (nnodes_junction)) + self.noise_flowrates_junct[igraph][:,index-1]
 
     def get_state_dict(self, gindex, tindex):
-        pressure_dict = {'inner': self.graphs[gindex].nodes['inner'].data['pressure_' + str(tindex)],
+        pressure_dict = {'branch': self.graphs[gindex].nodes['branch'].data['pressure_' + str(tindex)],
+                         'junction': self.graphs[gindex].nodes['junction'].data['pressure_' + str(tindex)],
                          'inlet': self.graphs[gindex].nodes['inlet'].data['pressure_' + str(tindex)],
                          'outlet': self.graphs[gindex].nodes['outlet'].data['pressure_' + str(tindex)]}
-        flowrate_dict = {'inner': self.graphs[gindex].nodes['inner'].data['flowrate_' + str(tindex)],
+        flowrate_dict = {'branch': self.graphs[gindex].nodes['branch'].data['flowrate_' + str(tindex)],
+                         'junction': self.graphs[gindex].nodes['junction'].data['flowrate_' + str(tindex)],
                          'inlet': self.graphs[gindex].nodes['inlet'].data['flowrate_' + str(tindex)],
                          'outlet': self.graphs[gindex].nodes['outlet'].data['flowrate_' + str(tindex)]}
         return {'pressure': pressure_dict, 'flowrate': flowrate_dict}
@@ -203,8 +256,10 @@ class DGL_Dataset(DGLDataset):
     def prep_item(self, gindex, tindex, label_coefs = None):
         state_dict = self.get_state_dict(gindex, tindex)
         next_state_dict = self.get_state_dict(gindex, tindex+1)
-        noise_dict = {'pressure': torch.from_numpy(np.expand_dims(self.noise_pressures[gindex][:,tindex],1)),
-                      'flowrate': torch.from_numpy(np.expand_dims(self.noise_flowrates[gindex][:,tindex],1))}
+        noise_dict = {'pressure_branch': torch.from_numpy(np.expand_dims(self.noise_pressures_branch[gindex][:,tindex],1)),
+                      'pressure_junct': torch.from_numpy(np.expand_dims(self.noise_pressures_junct[gindex][:,tindex],1)),
+                      'flowrate_branch': torch.from_numpy(np.expand_dims(self.noise_flowrates_branch[gindex][:,tindex],1)),
+                      'flowrate_junct': torch.from_numpy(np.expand_dims(self.noise_flowrates_junct[gindex][:,tindex],1))}
         set_state(self.lightgraphs[gindex], state_dict, next_state_dict, noise_dict, label_coefs)
 
     def __getitem__(self, i):
@@ -225,7 +280,7 @@ class DGL_Dataset(DGLDataset):
 def get_times(graph):
     times = []
 
-    features = graph.nodes['inner'].data
+    features = graph.nodes['branch'].data
     for feature in features:
         if 'pressure' in feature:
             ind  = feature.find('_')
@@ -241,7 +296,8 @@ def free_fields(graph, times):
             del(graph.nodes[node_type].data['noise_p_' + str(t)])
             del(graph.nodes[node_type].data['flowrate_' + str(t)])
             del(graph.nodes[node_type].data['noise_q_' + str(t)])
-    per_node_type('inner')
+    per_node_type('branch')
+    per_node_type('junction')
     per_node_type('inlet')
     per_node_type('outlet')
 
@@ -262,7 +318,8 @@ def set_timestep(targetgraph, allgraph, t, tp1):
         targetgraph.nodes[node_type].data['pressure_next'] = allgraph.nodes[node_type].data['pressure_' + str(tp1)]
         targetgraph.nodes[node_type].data['flowrate_next'] = allgraph.nodes[node_type].data['flowrate_' + str(tp1)]
 
-    per_node_type('inner')
+    per_node_type('branch')
+    per_node_type('junction')
     per_node_type('inlet')
     per_node_type('outlet')
 
@@ -299,12 +356,18 @@ def min_max_normalization(graph, fields, bounds_dict):
                        np.linalg.norm(np.max(graph.edges[edge_type].data[feat].detach().numpy()) - 1) > 1e-5:
                            graph.edges[edge_type].data[feat] = min_max(graph.edges[edge_type].data[feat], bounds_dict[field])
 
-    per_node_type('inner')
+    per_node_type('branch')
+    per_node_type('junction')
     per_node_type('inlet')
     per_node_type('outlet')
-    per_edge_type('inner_to_inner')
-    per_edge_type('in_to_inner')
-    per_edge_type('out_to_inner')
+    per_edge_type('branch_to_branch')
+    per_edge_type('junction_to_junction')
+    per_edge_type('branch_to_junction')
+    per_edge_type('junction_to_branch')
+    per_edge_type('in_to_branch')
+    per_edge_type('in_to_junction')
+    per_edge_type('out_to_branch')
+    per_edge_type('out_to_junction')
 
 def standardize(field, coeffs):
     if type(coeffs['mean']) == list:
@@ -345,12 +408,18 @@ def standard_normalization(graph, fields, coeffs_dict):
                 if field in feat:
                     graph.edges[edge_type].data[feat] = standardize(graph.edges[edge_type].data[feat], coeffs_dict[field])
 
-    per_node_type('inner')
+    per_node_type('branch')
+    per_node_type('junction')
     per_node_type('inlet')
     per_node_type('outlet')
-    per_edge_type('inner_to_inner')
-    per_edge_type('in_to_inner')
-    per_edge_type('out_to_inner')
+    per_edge_type('branch_to_branch')
+    per_edge_type('junction_to_junction')
+    per_edge_type('branch_to_junction')
+    per_edge_type('junction_to_branch')
+    per_edge_type('in_to_branch')
+    per_edge_type('in_to_junction')
+    per_edge_type('out_to_branch')
+    per_edge_type('out_to_junction')
 
 def normalize_function(field, field_name, coefs_dict):
     if coefs_dict['type'] == 'min_max':
@@ -417,8 +486,11 @@ def graph_statistics(graph, field):
     sumv = 0
     minv = None
     maxv = None
-    node_types = ['inner', 'inlet', 'outlet']
-    edge_types = ['inner_to_inner', 'in_to_inner', 'out_to_inner']
+    node_types = ['branch', 'junction', 'inlet', 'outlet']
+    edge_types = ['branch_to_branch', 'junction_to_junction',
+                  'branch_to_junction', 'junction_to_branch',
+                  'in_to_branch', 'in_to_junction',
+                  'out_to_branch', 'out_to_junction']
     for nt in node_types:
         cmin, cmax, csum, cN = per_node_type(nt)
         if minv is None:
@@ -466,8 +538,11 @@ def graph_squared_diff(graph, field, mean):
                 sumv = sumv + np.sum((value - mean)**2, axis = 0)
         return  sumv
     sumv = 0
-    node_types = ['inner', 'inlet', 'outlet']
-    edge_types = ['inner_to_inner', 'in_to_inner', 'out_to_inner']
+    node_types = ['branch', 'junction', 'inlet', 'outlet']
+    edge_types = ['branch_to_branch', 'junction_to_junction',
+                  'branch_to_junction', 'junction_to_branch',
+                  'in_to_branch', 'in_to_junction',
+                  'out_to_branch', 'out_to_junction']
 
     for nt in node_types:
         csum = per_node_type(nt, mean)
@@ -544,10 +619,102 @@ def normalize(graphs, ntype, coefs_dict = None):
 
     return norm_graphs, coefs_dict
 
-def generate_dataset(model_names, coefs_dict = None, dataset_params = None):
+def randomize_graph(graph):
+    # we want to the keep the scale close to one otherwise flowrate and pressure
+    # don't make sense
+    minscale = 1/1.04
+    maxscale = 1.04
+    scale = minscale + np.random.rand(1) * (maxscale - minscale)
+
+    # random rotation matrix
+    R, _ = np.linalg.qr(np.random.rand(3,3))
+
+    def rotate_array(inarray):
+        inarray = np.matmul(inarray,R) * scale
+
+    def scale_array(inarray):
+        inarray = inarray * scale
+
+    newgraph = copy.deepcopy(graph)
+
+    rotate_array(newgraph.edges['branch_to_branch'].data['position'][:,0:3])
+    scale_array(newgraph.edges['branch_to_branch'].data['position'][:,3])
+    rotate_array(newgraph.edges['junction_to_junction'].data['position'][:,0:3])
+    scale_array(newgraph.edges['junction_to_junction'].data['position'][:,3])
+    rotate_array(newgraph.edges['junction_to_branch'].data['position'][:,0:3])
+    scale_array(newgraph.edges['junction_to_branch'].data['position'][:,3])
+    rotate_array(newgraph.edges['branch_to_junction'].data['position'][:,0:3])
+    scale_array(newgraph.edges['branch_to_junction'].data['position'][:,3])
+    scale_array(newgraph.edges['in_to_branch'].data['distance'])
+    scale_array(newgraph.edges['in_to_junction'].data['distance'])
+    scale_array(newgraph.edges['out_to_branch'].data['distance'])
+    scale_array(newgraph.edges['out_to_junction'].data['distance'])
+
+    rotate_array(newgraph.nodes['branch'].data['x'])
+    scale_array(newgraph.nodes['branch'].data['area'])
+    rotate_array(newgraph.nodes['branch'].data['tangent'])
+
+    rotate_array(newgraph.nodes['junction'].data['x'])
+    scale_array(newgraph.nodes['junction'].data['area'])
+    rotate_array(newgraph.nodes['junction'].data['tangent'])
+
+    rotate_array(newgraph.nodes['inlet'].data['x'])
+    rotate_array(newgraph.nodes['outlet'].data['x'])
+
+    return newgraph
+
+def add_noise(graph, coefs, stdv):
+    nnodes = graph.nodes['branch'].data['x'].shape[0] + \
+             graph.nodes['junction'].data['x'].shape[0]
+
+    noise_p = np.random.normal(0, stdv, (nnodes, 1))
+
+    # for flowrate, we add a scalar in order to ensure flow conservation
+    noise_q = np.random.normal(0, stdv, 1)
+    ntimes = graph.nodes['params'].data['times'].shape[1]
+
+    def per_node_type(node_type, t):
+        graph.nodes[node_type].data['pressure_' + str(t)] = \
+            graph.nodes[node_type].data['pressure_' + str(t)] + \
+            noise_p[graph.nodes[node_type].data['mask']]
+
+        graph.nodes[node_type].data['flowrate_' + str(t)] = \
+            graph.nodes[node_type].data['flowrate_' + str(t)] + noise_q
+
+    for t in range(ntimes):
+        per_node_type('branch', t)
+        per_node_type('junction', t)
+        per_node_type('inlet', t)
+        per_node_type('outlet', t)
+
+def generate_dataset(model_names, coefs_dict = None, dataset_params = None, train = False):
     graphs = []
     for model_name in model_names:
         graphs.append(load_graphs('../graphs/data/' + model_name + '.grph')[0][0])
+
+    numgraphs = len(graphs)
+
+    # print dataset statistics
+    nnodes = 0
+    nedges = 0
+    for graph in graphs:
+        nnodes = nnodes + graph.nodes['branch'].data['x'].shape[0]
+        nnodes = nnodes + graph.nodes['junction'].data['x'].shape[0]
+        nedges = nedges + graph.edges['branch_to_branch'].data['position'].shape[0]
+        nedges = nedges + graph.edges['branch_to_junction'].data['position'].shape[0]
+        nedges = nedges + graph.edges['junction_to_junction'].data['position'].shape[0]
+        nedges = nedges + graph.edges['junction_to_branch'].data['position'].shape[0]
+
+    print('n. graphs = ' + str(len(graphs)))
+    print('average n. nodes = ' + str(nnodes / len(graphs)))
+    print('average n. edges = ' + str(nedges / len(graphs)))
+
+    if dataset_params != None:
+        if train:
+            num_augmentation = dataset_params['augment_data']
+            for i in range(num_augmentation):
+                for igraph in range(numgraphs):
+                    graphs.append(randomize_graph(graphs[igraph]))
 
     normalization_type = 'standard'
     if dataset_params != None:
@@ -558,5 +725,11 @@ def generate_dataset(model_names, coefs_dict = None, dataset_params = None):
         label_normalization = dataset_params['label_normalization']
 
     graphs, coefs_dict = normalize(graphs, normalization_type, coefs_dict)
+    if dataset_params != None:
+        if train:
+            if dataset_params['add_noise']:
+                stdv = dataset_params['noise_stdv']
+                for i in range(len(graphs)):
+                    add_noise(graphs[i], coefs_dict, stdv)
 
     return DGL_Dataset(graphs, label_normalization, coefs_dict)

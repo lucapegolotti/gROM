@@ -20,26 +20,39 @@ from scipy import interpolate
 from matplotlib import animation
 import json
 from raw_graph import RawGraph
+import plot_tools as pt
+import pathlib
 
 DTYPE = np.float32
 
 def create_fixed_graph(raw_graph, area):
-    inner_dict, inlet_dict, outlet_dict, macro_dict = raw_graph.create_heterogeneous_graph()
+    branch_dict, junct_dict, inlet_dict, outlet_dict, macro_dict = \
+        raw_graph.create_heterogeneous_graph()
 
-    graph_data = {('inner', 'inner_to_inner', 'inner'): \
-                  (inner_dict['edges'][:,0], inner_dict['edges'][:,1]),
-                  ('inlet', 'in_to_inner', 'inner'): \
-                  (inlet_dict['edges'][:,0], inlet_dict['edges'][:,1]), \
-                  ('outlet', 'out_to_inner', 'inner'): \
-                  (outlet_dict['edges'][:,0], outlet_dict['edges'][:,1]), \
+    graph_data = {('branch', 'branch_to_branch', 'branch'): \
+                  (branch_dict['edges'][:,0], branch_dict['edges'][:,1]), \
+                  ('junction', 'junction_to_junction', 'junction'): \
+                  (junct_dict['edges'][:,0], junct_dict['edges'][:,1]), \
+                  ('branch', 'branch_to_junction', 'junction'): \
+                  (branch_dict['branch_to_junct'][:,0], branch_dict['branch_to_junct'][:,1]), \
+                  ('junction', 'junction_to_branch', 'branch'): \
+                  (junct_dict['junct_to_branch'][:,0], junct_dict['junct_to_branch'][:,1]), \
+                  ('inlet', 'in_to_branch', 'branch'): \
+                  (inlet_dict['edges_branch'][:,0], inlet_dict['edges_branch'][:,1]), \
+                  ('inlet', 'in_to_junction', 'junction'): \
+                  (inlet_dict['edges_junct'][:,0], inlet_dict['edges_junct'][:,1]), \
+                  ('outlet', 'out_to_branch', 'branch'): \
+                  (outlet_dict['edges_branch'][:,0], outlet_dict['edges_branch'][:,1]), \
+                  ('outlet', 'out_to_junction', 'junction'): \
+                  (outlet_dict['edges_junct'][:,0], outlet_dict['edges_junct'][:,1]), \
                   ('params', 'dummy', 'params'): \
                   (np.array([0]), np.array([0])), \
-                  ('inner', 'inner_to_macro', 'macro'): \
-                  (macro_dict['inner_to_macro'][:,0],
-                   macro_dict['inner_to_macro'][:,1]),
-                  ('macro', 'macro_to_inner', 'inner'): \
-                  (macro_dict['macro_to_inner'][:,0],
-                   macro_dict['macro_to_inner'][:,1]),
+                  ('branch', 'branch_to_macro', 'macro'): \
+                  (macro_dict['branch_to_macro'][:,0],
+                   macro_dict['branch_to_macro'][:,1]),
+                  ('macro', 'macro_to_branch', 'branch'): \
+                  (macro_dict['macro_to_branch'][:,0],
+                   macro_dict['macro_to_branch'][:,1]),
                   ('macro', 'macro_to_junction_positive', 'junction'): \
                   (macro_dict['macro_to_junction_positive'][:,0],
                    macro_dict['macro_to_junction_positive'][:,1]),
@@ -52,7 +65,6 @@ def create_fixed_graph(raw_graph, area):
                   (macro_dict['inlet_to_junction_positive'][:,0],
                    macro_dict['inlet_to_junction_positive'][:,1])
     else:
-        print('entering here')
         graph_data[('inlet', 'inlet_to_junction_positive', 'junction')] = \
                   (np.array([]), np.array([]))
 
@@ -61,39 +73,65 @@ def create_fixed_graph(raw_graph, area):
                   (macro_dict['outlet_to_junction_negative'][:,0],
                    macro_dict['outlet_to_junction_negative'][:,1])
     else:
-        print('entering there')
         graph_data[('outlet', 'outlet_to_junction_negative', 'junction')] = \
                   (np.array([]), np.array([]))
 
     graph = dgl.heterograph(graph_data)
 
-    graph.edges['inner_to_inner'].data['position'] = \
-                        torch.from_numpy(inner_dict['position'].astype(DTYPE))
-    graph.edges['inner_to_inner'].data['edges'] = \
-                        torch.from_numpy(inner_dict['edges'])
-    graph.edges['in_to_inner'].data['distance'] = \
-                        torch.from_numpy(inlet_dict['distance'].astype(DTYPE))
-    graph.edges['in_to_inner'].data['physical_same'] = \
-                        torch.from_numpy(inlet_dict['physical_same'])
-    graph.edges['in_to_inner'].data['edges'] = \
-                        torch.from_numpy(inlet_dict['edges'])
-    graph.edges['out_to_inner'].data['distance'] = \
-                        torch.from_numpy(outlet_dict['distance'].astype(DTYPE))
-    graph.edges['out_to_inner'].data['physical_same'] = \
-                        torch.from_numpy(outlet_dict['physical_same'])
-    graph.edges['out_to_inner'].data['edges'] = \
-                        torch.from_numpy(outlet_dict['edges'])
+    graph.edges['branch_to_branch'].data['position'] = \
+                        torch.from_numpy(branch_dict['pos'].astype(DTYPE))
+    graph.edges['branch_to_branch'].data['edges'] = \
+                        torch.from_numpy(branch_dict['edges'])
+    graph.edges['junction_to_junction'].data['position'] = \
+                        torch.from_numpy(junct_dict['pos'].astype(DTYPE))
+    graph.edges['junction_to_junction'].data['edges'] = \
+                        torch.from_numpy(junct_dict['edges'])
+    graph.edges['branch_to_junction'].data['position'] = \
+                        torch.from_numpy(branch_dict['pos_branch_to_junct'])
+    graph.edges['junction_to_branch'].data['position'] = \
+                        torch.from_numpy(junct_dict['pos_junct_to_branch'])
+    graph.edges['in_to_branch'].data['distance'] = \
+                        torch.from_numpy(inlet_dict['distance_branch'].astype(DTYPE))
+    graph.edges['in_to_junction'].data['distance'] = \
+                        torch.from_numpy(inlet_dict['distance_junct'].astype(DTYPE))
+    graph.edges['in_to_branch'].data['physical_same'] = \
+                        torch.from_numpy(inlet_dict['physical_same_branch'])
+    graph.edges['in_to_junction'].data['physical_same'] = \
+                        torch.from_numpy(inlet_dict['physical_same_junct'])
+    graph.edges['in_to_branch'].data['edges'] = \
+                        torch.from_numpy(inlet_dict['edges_branch'])
+    graph.edges['in_to_junction'].data['edges'] = \
+                        torch.from_numpy(inlet_dict['edges_junct'])
+    graph.edges['out_to_branch'].data['distance'] = \
+                        torch.from_numpy(outlet_dict['distance_branch'].astype(DTYPE))
+    graph.edges['out_to_junction'].data['distance'] = \
+                        torch.from_numpy(outlet_dict['distance_junct'].astype(DTYPE))
+    graph.edges['out_to_branch'].data['physical_same'] = \
+                        torch.from_numpy(outlet_dict['physical_same_branch'])
+    graph.edges['out_to_junction'].data['physical_same'] = \
+                        torch.from_numpy(outlet_dict['physical_same_junct'])
+    graph.edges['out_to_branch'].data['edges'] = \
+                        torch.from_numpy(outlet_dict['edges_branch'])
+    graph.edges['out_to_junction'].data['edges'] = \
+                        torch.from_numpy(outlet_dict['edges_junct'])
 
-    graph.nodes['inner'].data['x'] = torch.from_numpy(inner_dict['x'])
-    graph.nodes['inner'].data['area'] = torch.from_numpy(area.astype(DTYPE))
+    graph.nodes['branch'].data['mask'] = torch.from_numpy(branch_dict['mask'])
+    graph.nodes['branch'].data['x'] = torch.from_numpy(branch_dict['x'])
+    graph.nodes['branch'].data['area'] = torch.from_numpy(area[branch_dict['mask']].astype(DTYPE))
+    graph.nodes['branch'].data['dt'] = torch.ones(area[branch_dict['mask']].shape)
+    graph.nodes['branch'].data['tangent'] = torch.from_numpy(branch_dict['tangent'])
+
+    graph.nodes['junction'].data['mask'] = torch.from_numpy(junct_dict['mask'])
+    graph.nodes['junction'].data['x'] = torch.from_numpy(junct_dict['x'])
+    graph.nodes['junction'].data['area'] = torch.from_numpy(area[junct_dict['mask']].astype(DTYPE))
+    graph.nodes['junction'].data['dt'] = torch.ones(area[junct_dict['mask']].shape)
+    graph.nodes['junction'].data['tangent'] = torch.from_numpy(junct_dict['tangent'])
     max_bif_degree = 16
-    graph.nodes['inner'].data['node_type'] = torch.nn.functional.one_hot(
-                                             torch.from_numpy(
-                                             np.squeeze(
-                                             inner_dict['node_type'].astype(int))),
-                                             num_classes=max_bif_degree)
-    graph.nodes['inner'].data['dt'] = torch.ones(graph.nodes['inner'].data['area'].shape)
-    graph.nodes['inner'].data['tangent'] = torch.from_numpy(inner_dict['tangent'])
+    graph.nodes['junction'].data['node_type'] = torch.nn.functional.one_hot(
+                                                torch.from_numpy(
+                                                np.squeeze(
+                                                junct_dict['node_type'].astype(int))),
+                                                num_classes=max_bif_degree)
 
     graph.nodes['inlet'].data['mask'] = torch.from_numpy(inlet_dict['mask'])
     graph.nodes['inlet'].data['area'] = torch.from_numpy(area[inlet_dict['mask']].astype(DTYPE))
@@ -104,10 +142,9 @@ def create_fixed_graph(raw_graph, area):
     graph.nodes['outlet'].data['x'] = torch.from_numpy(outlet_dict['x'])
 
     print('Graph generated:')
-    print(' n. inner nodes = ' + str(inner_dict['x'].shape[0]))
-    print(' n. inner edges = ' + str(inner_dict['edges'].shape[0]))
-    print(' n. inlet edges = ' + str(inlet_dict['edges'].shape[0]))
-    print(' n. outlet edges = ' + str(outlet_dict['edges'].shape[0]))
+    print(' n. branch nodes = ' + str(branch_dict['x'].shape[0]))
+    print(' n. junction nodes = ' + str(junct_dict['x'].shape[0]))
+    print(' n. nodes = ' + str(branch_dict['x'].shape[0] + junct_dict['x'].shape[0]))
 
     return graph
 
@@ -116,7 +153,8 @@ def set_field(graph, name_field, field):
         mask = graph.nodes[node_type].data['mask'].detach().numpy().astype(int)
         masked_field = torch.from_numpy(field[mask].astype(DTYPE))
         graph.nodes[node_type].data[name_field] = masked_field
-    graph.nodes['inner'].data[name_field] = torch.from_numpy(field.astype(DTYPE))
+    set_in_node('branch')
+    set_in_node('junction')
     set_in_node('inlet')
     set_in_node('outlet')
 
@@ -138,7 +176,8 @@ def add_fields(graph, pressure, velocity):
     newgraph.nodes['params'].data['times'] = \
                         torch.from_numpy(np.expand_dims(np.array(times),axis=0))
 
-    newgraph.nodes['inner'].data['dt'] = graph.nodes['inner'].data['dt'] * (np.array(times[1] - times[0]))
+    newgraph.nodes['branch'].data['dt'] = graph.nodes['branch'].data['dt'] * (np.array(times[1] - times[0]))
+    newgraph.nodes['junction'].data['dt'] = graph.nodes['junction'].data['dt'] * (np.array(times[1] - times[0]))
 
     return newgraph
 
@@ -177,18 +216,37 @@ def generate_graphs(model_name, model_params, input_dir, output_dir, save = True
     debug = False
 
     raw_graph = RawGraph(p_array, model_params, debug)
-    area = raw_graph.project(fields['area'])
+    area, _ = raw_graph.project(fields['area'])
     raw_graph.set_node_types(fields['BifurcationId'])
 
     g_pressure, g_flowrate = io.gather_pressures_flowrates(fields)
 
     pressure = {}
     for t in g_pressure:
-        pressure[t] = raw_graph.partition_and_stack_field(g_pressure[t])
+        pressure[t], g_pressure[t] = raw_graph.partition_and_stack_field(g_pressure[t])
+
 
     flowrate = {}
     for t in g_flowrate:
-        flowrate[t] = raw_graph.partition_and_stack_field(g_flowrate[t])
+        flowrate[t], g_flowrate[t] = raw_graph.partition_and_stack_field(g_flowrate[t])
+
+    check_interpolation = True
+    if check_interpolation:
+        pathlib.Path('check_interpolation/').mkdir(parents=True, exist_ok=True)
+        folder = 'check_interpolation/' + model_name
+        pathlib.Path(folder).mkdir(parents=True, exist_ok=True)
+
+        arclength_interpolated = raw_graph.compute_resampled_arclenght()
+        arclength_original = raw_graph.compute_arclenght()
+
+        pt.plot_interpolated(pressure, g_pressure,
+                          arclength_interpolated, arclength_original,
+                          folder + '/pressure.mp4')
+
+        pt.plot_interpolated(flowrate, g_flowrate,
+                          arclength_interpolated, arclength_original,
+                          folder + '/flowrate.mp4')
+
 
     print('Augmenting timesteps')
     pressure = augment_time(pressure, model_params['period'],

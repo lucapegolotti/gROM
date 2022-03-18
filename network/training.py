@@ -4,6 +4,8 @@ import os
 # this fixes a problem with openmp https://github.com/dmlc/xgboost/issues/1715
 # os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
+sys.path.append("../tools")
+
 import dgl
 import torch
 import torch.distributed as dist
@@ -22,7 +24,6 @@ import time
 import json
 import pathlib
 
-
 def mse(input, target):
     return ((input - target) ** 2).mean()
 
@@ -36,7 +37,9 @@ def generate_gnn_model(params_dict):
 
 def evaluate_model(gnn_model, train_dataloader, loss, metric = None,
                    optimizer = None, continuity_coeff = 0.0,
-                   validation_dataloader = None):
+                   bc_coeff = 0.0,
+                   validation_dataloader = None,
+                   train = True):
 
     try:
         average_flowrate = gnn_model.module.params['average_flowrate_training']
@@ -45,42 +48,81 @@ def evaluate_model(gnn_model, train_dataloader, loss, metric = None,
     label_coefs = train_dataloader.dataloader.dataset.label_coefs
     coefs_dict = train_dataloader.dataloader.dataset.coefs_dict
 
+    # this is to turn on or off dropout layers
+    if train:
+        gnn_model.train()
+    else:
+        gnn_model.eval()
+
     def loop_over(dataloader, c_optimizer = None):
         global_loss = 0
         global_metric = 0
         count = 0
         c_loss_global = 0
         for batched_graph in dataloader:
-            pred = gnn_model(batched_graph,
-                             batched_graph.nodes['inner'].data['n_features'].float()).squeeze()
+            pred_branch, pred_junction = gnn_model(batched_graph, \
+                                                   batched_graph.nodes['branch'].data['n_features'].float(), \
+                                                   batched_graph.nodes['junction'].data['n_features'].float())
+
+            pred_branch = pred_branch.squeeze()
+            pred_junction = pred_junction.squeeze()
+
+            train_on_junctions = True
+
+            if train_on_junctions:
+                pred = torch.cat((pred_branch, pred_junction), 0)
+                label = torch.cat((batched_graph.nodes['branch'].data['n_labels'].float(),
+                                   batched_graph.nodes['junction'].data['n_labels'].float()), 0)
+            else:
+                pred = pred_branch
+                label = batched_graph.nodes['branch'].data['n_labels'].float()
 
             try:
-                c_loss = gnn_model.module.compute_continuity_loss(batched_graph, pred, label_coefs, coefs_dict)
+                c_loss = gnn_model.module.compute_continuity_loss(batched_graph, pred_branch, pred_junction, label_coefs, coefs_dict)
+                bc_loss = gnn_model.module.compute_bc_loss(batched_graph,
+                                                    batched_graph.nodes['branch'].data['n_features'],
+                                                    batched_graph.nodes['junction'].data['n_features'],
+                                                    batched_graph.nodes['inlet'].data['n_features'],
+                                                    batched_graph.nodes['outlet'].data['n_features'],
+                                                    pred_branch,
+                                                    pred_junction,
+                                                    label_coefs)
             except AttributeError:
-                c_loss = gnn_model.compute_continuity_loss(batched_graph, pred, label_coefs, coefs_dict)
+                c_loss = gnn_model.compute_continuity_loss(batched_graph, pred_branch, pred_junction, label_coefs, coefs_dict)
+                bc_loss = gnn_model.compute_bc_loss(batched_graph,
+                                                    batched_graph.nodes['branch'].data['n_features'],
+                                                    batched_graph.nodes['junction'].data['n_features'],
+                                                    batched_graph.nodes['inlet'].data['n_features'],
+                                                    batched_graph.nodes['outlet'].data['n_features'],
+                                                    pred_branch,
+                                                    pred_junction,
+                                                    label_coefs)
 
+            loss_v = loss(pred, label)
             if continuity_coeff > 1e-5:
                 # real = gnn_model.compute_continuity_loss(batched_graph, batched_graph.nodes['inner'].data['n_labels'], label_coefs, coefs_dict)
                 # print(real)
-                loss_v = loss(pred, torch.reshape(batched_graph.nodes['inner'].data['n_labels'].float(),
-                              pred.shape)) + c_loss * continuity_coeff
+                loss_v =  loss_v + c_loss * continuity_coeff
             else:
-                loss_v = loss(pred, torch.reshape(batched_graph.nodes['inner'].data['n_labels'].float(),
-                              pred.shape))
-            c_loss_global = c_loss_global + c_loss
+                pass
 
+            if bc_coeff > 1e-5:
+                loss_v =  loss_v + bc_loss * continuity_coeff
+            else:
+                pass
+
+            c_loss_global = c_loss_global + c_loss
             global_loss = global_loss + loss_v.detach().numpy()
 
             if metric != None:
-                metric_v = metric(pred, torch.reshape(batched_graph.nodes['inner'].data['n_labels'].float(),
-                                  pred.shape))
+                metric_v = metric(pred, label)
 
                 global_metric = global_metric + metric_v.detach().numpy()
 
             if c_optimizer != None:
-                optimizer.zero_grad()
-                loss_v.backward()
-                optimizer.step()
+               optimizer.zero_grad()
+               loss_v.backward()
+               optimizer.step()
             count = count + 1
 
         return {'global_loss': global_loss, 'count': count,
@@ -97,7 +139,8 @@ def evaluate_model(gnn_model, train_dataloader, loss, metric = None,
 def train_gnn_model(gnn_model, train, validation, optimizer_name, train_params,
                     checkpoint_fct = None, dataset_params = None):
     # we only compute the coefs_dict on the train_dataset
-    train_dataset = pp.generate_dataset(train, dataset_params = dataset_params)
+    train_dataset = pp.generate_dataset(train, dataset_params = dataset_params,
+                                        train = True)
     coefs_dict = train_dataset.coefs_dict
     print('Dataset contains {:.0f} graphs'.format(len(train_dataset)))
 
@@ -152,7 +195,8 @@ def train_gnn_model(gnn_model, train, validation, optimizer_name, train_params,
 
     if optimizer_name == 'adam':
         optimizer = torch.optim.Adam(gnn_model.parameters(),
-                                     train_params['learning_rate'])
+                                     train_params['learning_rate'],
+                                     weight_decay=train_params['weight_decay'])
     elif optimizer_name == 'sgd':
         optimizer = torch.optim.SGD(gnn_model.parameters(),
                                     train_params['learning_rate'],
@@ -175,11 +219,21 @@ def train_gnn_model(gnn_model, train, validation, optimizer_name, train_params,
         # 200 is the maximum number of sigopt checkpoint
         chckp_epochs = list(np.floor(np.linspace(0, nepochs, 200)))
 
+    ramp_epochs = int(np.floor(nepochs/2))
+
     for epoch in range(nepochs):
+        if epoch >= ramp_epochs:
+            train_dataset.sample_noise(dataset_params['rate_noise'])
+            validation_dataset.sample_noise(dataset_params['rate_noise'])
+        else:
+            train_dataset.sample_noise(dataset_params['rate_noise'] * epoch/ramp_epochs)
+            validation_dataset.sample_noise(dataset_params['rate_noise'] * epoch/ramp_epochs)
+
         train_results, val_results, elapsed = evaluate_model(gnn_model, train_dataloader,
                                                              mse, weighted_mae, optimizer,
                                                              validation_dataloader = validation_dataloader,
-                                                             continuity_coeff = 10**train_params['continuity_coeff'])
+                                                             continuity_coeff = 10**train_params['continuity_coeff'],
+                                                             bc_coeff = 10**train_params['bc_coeff'])
 
         msg = '{:.0f}\t'.format(epoch)
         msg = msg + 'train_loss = {:.2e} '.format(train_results['global_loss']/train_results['count'])
@@ -195,14 +249,6 @@ def train_gnn_model(gnn_model, train, validation, optimizer_name, train_params,
         if checkpoint_fct != None:
             if epoch in chckp_epochs:
                 checkpoint_fct(global_loss/count)
-
-        if epoch >= 10:
-            if epoch >= 20:
-                train_dataset.sample_noise(dataset_params['rate_noise'])
-                validation_dataset.sample_noise(dataset_params['rate_noise'])
-            else:
-                train_dataset.sample_noise(dataset_params['rate_noise'] * (epoch - 10)/10)
-                validation_dataset.sample_noise(dataset_params['rate_noise'] * (epoch - 10)/10)
 
     # compute final loss
     train_results, val_results, elapsed = evaluate_model(gnn_model, train_dataloader,
@@ -223,14 +269,9 @@ def train_gnn_model(gnn_model, train, validation, optimizer_name, train_params,
     return gnn_model, train_dataloader, train_results['global_loss']/train_results['count'], \
            train_results['global_metric']/train_results['count'], coefs_dict, train_dataset
 
-def create_directory(path):
-    try:
-        os.mkdir(path)
-    except OSError as exc:
-        pass
-
 def prepare_dataset(dataset_json):
     dataset = dataset_json['dataset']
+    random.seed(10)
     random.shuffle(dataset)
     ndata = len(dataset)
 
@@ -261,7 +302,8 @@ def launch_training(dataset_json, optimizer_name, params_dict,
     save_data = True
     # check if MPI is supported
     try:
-        gnn_model = torch.nn.parallel.DistributedDataParallel(gnn_model)
+        gnn_model = torch.nn.parallel.DistributedDataParallel(gnn_model,
+                                                              find_unused_parameters=True)
         save_data = (dist.get_rank() == 0)
     except RuntimeError:
         pass
@@ -314,7 +356,7 @@ if __name__ == "__main__":
     except RuntimeError:
         print("MPI not supported. Running serially.")
 
-    dataset_json = json.load(open('training_dataset.json'))
+    dataset_json = json.load(open('training_dataset_all.json'))
 
     # params_dict = {'infeat_nodes': 13,
     #                'infeat_edges': 4,
@@ -339,10 +381,15 @@ if __name__ == "__main__":
                     'momentum': 0.0,
                     'batch_size': 100,
                     'nepochs': 200,
-                    'continuity_coeff': -3}
+                    'continuity_coeff': -3,
+                    'bc_coeff': -5,
+                    'weight_decay': 1e-5}
     dataset_params = {'normalization': 'standard',
-                      'rate_noise': 60,
-                      'label_normalization': 'min_max'}
+                      'rate_noise': 1e-5,
+                      'label_normalization': 'min_max',
+                      'augment_data': 0,
+                      'add_noise': False,
+                      'noise_stdv': 1e-10}
 
     start = time.time()
     launch_training(dataset_json,  'adam', params_dict, train_params,
