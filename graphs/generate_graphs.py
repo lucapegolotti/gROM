@@ -246,6 +246,61 @@ def generate_graphs(model_name, model_params, input_dir, output_dir,
             end = time.time()
             elapsed_time = end - start
             print('Graph generated in = {:0.2f} s'.format(elapsed_time))
+
+            g_pressure, g_flowrate = io.gather_pressures_flowrates(fields)
+
+            times = [t for t in g_pressure]
+            times.sort()
+
+            # if we consider simulation from the start we skip a few timesteps
+            # because the first ones are noisy
+            if mv == 0:
+                for i in range(0,10):
+                    del g_pressure[times[i]]
+                    del g_flowrate[times[i]]
+
+                times = times[10:]
+
+            start = time.time()
+
+            pressure, g_pressure = raw_graph.partition_and_stack_fields(g_pressure)
+            flowrate, g_flowrate = raw_graph.partition_and_stack_fields(g_flowrate)
+
+            end = time.time()
+            elapsed_time = end - start
+            print('Fields projected in = {:0.2f} s'.format(elapsed_time))
+
+            check_interpolation = False
+            if check_interpolation:
+                pathlib.Path('check_interpolation/').mkdir(parents=True, exist_ok=True)
+                folder = 'check_interpolation/' + model_name + '.' + str(n_graph)
+                pathlib.Path(folder).mkdir(parents=True, exist_ok=True)
+
+                arclength_interpolated = raw_graph.compute_resampled_arclenght()
+                arclength_original = raw_graph.compute_arclenght()
+
+                pt.plot_interpolated(pressure, g_pressure,
+                                  arclength_interpolated, arclength_original,
+                                  folder + '/pressure.mp4')
+
+                pt.plot_interpolated(flowrate, g_flowrate,
+                                  arclength_interpolated, arclength_original,
+                                  folder + '/flowrate.mp4')
+
+            print('Augmenting timesteps')
+            ntimepoints = random.randint(model_params['min_timepoints'],
+                                         model_params['max_timepoints'])
+            pressure = augment_time(pressure, model_params, ntimepoints)
+            flowrate = augment_time(flowrate, model_params, ntimepoints)
+
+            print('Generating graphs')
+            fixed_graph = create_fixed_graph(raw_graph, raw_graph.stack(area))
+
+            print('Adding fields')
+            graphs = add_fields(fixed_graph, pressure, flowrate)
+            if save:
+                dgl.save_graphs(output_dir + model_name + '.' + str(n_graph) + '.grph', graphs)
+
         except Exception as e:
             print('Failed to generate: ' + str(e))
             failures = failures + 1
@@ -256,60 +311,6 @@ def generate_graphs(model_name, model_params, input_dir, output_dir,
             else:
                 print('Exiting...')
                 return False
-
-        g_pressure, g_flowrate = io.gather_pressures_flowrates(fields)
-
-        times = [t for t in g_pressure]
-        times.sort()
-
-        # if we consider simulation from the start we skip a few timesteps
-        # because the first ones are noisy
-        if mv == 0:
-            for i in range(0,10):
-                del g_pressure[times[i]]
-                del g_flowrate[times[i]]
-
-            times = times[10:]
-
-        start = time.time()
-
-        pressure, g_pressure = raw_graph.partition_and_stack_fields(g_pressure)
-        flowrate, g_flowrate = raw_graph.partition_and_stack_fields(g_flowrate)
-
-        end = time.time()
-        elapsed_time = end - start
-        print('Fields projected in = {:0.2f} s'.format(elapsed_time))
-
-        check_interpolation = True
-        if check_interpolation:
-            pathlib.Path('check_interpolation/').mkdir(parents=True, exist_ok=True)
-            folder = 'check_interpolation/' + model_name + '.' + str(n_graph)
-            pathlib.Path(folder).mkdir(parents=True, exist_ok=True)
-
-            arclength_interpolated = raw_graph.compute_resampled_arclenght()
-            arclength_original = raw_graph.compute_arclenght()
-
-            pt.plot_interpolated(pressure, g_pressure,
-                              arclength_interpolated, arclength_original,
-                              folder + '/pressure.mp4')
-
-            pt.plot_interpolated(flowrate, g_flowrate,
-                              arclength_interpolated, arclength_original,
-                              folder + '/flowrate.mp4')
-
-        print('Augmenting timesteps')
-        ntimepoints = random.randint(model_params['min_timepoints'],
-                                     model_params['max_timepoints'])
-        pressure = augment_time(pressure, model_params, ntimepoints)
-        flowrate = augment_time(flowrate, model_params, ntimepoints)
-
-        print('Generating graphs')
-        fixed_graph = create_fixed_graph(raw_graph, raw_graph.stack(area))
-
-        print('Adding fields')
-        graphs = add_fields(fixed_graph, pressure, flowrate)
-        if save:
-            dgl.save_graphs(output_dir + model_name + '.' + str(n_graph) + '.grph', graphs)
     return True
 
 if __name__ == "__main__":
