@@ -7,3 +7,4 @@ gromenv
 *.mp4
 results_*
 check_interpolation
+normalized_data

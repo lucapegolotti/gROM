@@ -227,8 +227,9 @@ def generate_graphs(model_name, model_params, input_dir, output_dir,
             versions.append(mv)
 
     failures = 0
-    max_failures = 5
-    for n_graph in range(0, n_graphs_per_model):
+    max_failures = 100
+    n_graph = 0
+    while n_graph < n_graphs_per_model:
         print('Adding graph ' + str(n_graph))
         # pick a random version
         mv = random.choice(versions)
@@ -242,6 +243,10 @@ def generate_graphs(model_name, model_params, input_dir, output_dir,
             start = time.time()
             raw_graph = RawGraph(p_array, model_params, debug)
             area, _ = raw_graph.project(fields['area'])
+            for a in area:
+                if (np.min(a) < 0):
+                    raise ValueError('Interpolated area is negative!')
+
             raw_graph.set_node_types(fields['BifurcationId'])
             end = time.time()
             elapsed_time = end - start
@@ -265,6 +270,11 @@ def generate_graphs(model_name, model_params, input_dir, output_dir,
 
             pressure, g_pressure = raw_graph.partition_and_stack_fields(g_pressure)
             flowrate, g_flowrate = raw_graph.partition_and_stack_fields(g_flowrate)
+
+            # we just check that there are no negative pressures after interpolation
+            for t in pressure:
+                if np.min(pressure[t]) < 0:
+                    raise ValueError("Min pressure is negative")
 
             end = time.time()
             elapsed_time = end - start
@@ -293,6 +303,10 @@ def generate_graphs(model_name, model_params, input_dir, output_dir,
             pressure = augment_time(pressure, model_params, ntimepoints)
             flowrate = augment_time(flowrate, model_params, ntimepoints)
 
+            for t in pressure:
+                if np.min(pressure[t]) < 0:
+                    raise ValueError("Min pressure is negative")
+
             print('Generating graphs')
             fixed_graph = create_fixed_graph(raw_graph, raw_graph.stack(area))
 
@@ -300,13 +314,13 @@ def generate_graphs(model_name, model_params, input_dir, output_dir,
             graphs = add_fields(fixed_graph, pressure, flowrate)
             if save:
                 dgl.save_graphs(output_dir + model_name + '.' + str(n_graph) + '.grph', graphs)
+            n_graph = n_graph + 1
 
         except Exception as e:
             print('Failed to generate: ' + str(e))
             failures = failures + 1
             if failures < max_failures:
                 print('Retrying...')
-                n_graph = n_graph - 1
                 continue
             else:
                 print('Exiting...')
@@ -317,6 +331,9 @@ if __name__ == "__main__":
     input_dir = 'vtps'
     output_dir = 'data/'
     params = json.load(open(input_dir + '/dataset_info.json'))
+    params2 = {}
+    params2['0087_1001'] = params['0087_1001']
+    params = params2
     timesteps = json.load(open(input_dir + '/timesteps.json'))
     for model in params:
         params[model]['timestep'] = timesteps[model]

@@ -24,6 +24,7 @@ import time
 import json
 import pathlib
 
+# try to use mse + param * torch.abs((input - target)).mean()
 def mse(input, target):
     return ((input - target) ** 2).mean()
 
@@ -137,14 +138,13 @@ def evaluate_model(gnn_model, train_dataloader, loss, metric = None,
     return train_results, validation_results, end - start
 
 def train_gnn_model(gnn_model, train, validation, optimizer_name, train_params,
-                    checkpoint_fct = None, dataset_params = None):
-    # we only compute the coefs_dict on the train_dataset
-    train_dataset = pp.generate_dataset(train, dataset_params = dataset_params,
+                    checkpoint_fct = None):
+    train_dataset, dataset_params = pp.generate_dataset(train, '../graphs/normalized_data',
                                         train = True)
     coefs_dict = train_dataset.coefs_dict
     print('Dataset contains {:.0f} graphs'.format(len(train_dataset)))
 
-    validation_dataset = pp.generate_dataset(validation, coefs_dict, dataset_params)
+    validation_dataset, _ = pp.generate_dataset(validation, '../graphs/normalized_data')
 
     if dataset_params['label_normalization'] == 'min_max':
         def weighted_mae(input, target):
@@ -219,15 +219,17 @@ def train_gnn_model(gnn_model, train, validation, optimizer_name, train_params,
         # 200 is the maximum number of sigopt checkpoint
         chckp_epochs = list(np.floor(np.linspace(0, nepochs, 200)))
 
+    noise_start = nepochs / 10
     ramp_epochs = int(np.floor(nepochs/2))
 
     for epoch in range(nepochs):
-        if epoch >= ramp_epochs:
-            train_dataset.sample_noise(dataset_params['rate_noise'])
-            validation_dataset.sample_noise(dataset_params['rate_noise'])
-        else:
-            train_dataset.sample_noise(dataset_params['rate_noise'] * epoch/ramp_epochs)
-            validation_dataset.sample_noise(dataset_params['rate_noise'] * epoch/ramp_epochs)
+        if epoch >= noise_start:
+            if epoch >= noise_start + ramp_epochs:
+                train_dataset.sample_noise(dataset_params['rate_noise'])
+                validation_dataset.sample_noise(dataset_params['rate_noise'])
+            else:
+                train_dataset.sample_noise(dataset_params['rate_noise'] * (epoch - noise_start)/ramp_epochs)
+                validation_dataset.sample_noise(dataset_params['rate_noise'] * (epoch - noise_start)/ramp_epochs)
 
         train_results, val_results, elapsed = evaluate_model(gnn_model, train_dataloader,
                                                              mse, weighted_mae, optimizer,
@@ -267,7 +269,8 @@ def train_gnn_model(gnn_model, train, validation, optimizer_name, train_params,
     print(msg, flush=True)
 
     return gnn_model, train_dataloader, train_results['global_loss']/train_results['count'], \
-           train_results['global_metric']/train_results['count'], coefs_dict, train_dataset
+           train_results['global_metric']/train_results['count'], coefs_dict, train_dataset, \
+           dataset_params
 
 def prepare_dataset(dataset_json):
     dataset = dataset_json['dataset']
@@ -285,8 +288,7 @@ def prepare_dataset(dataset_json):
 
 
 def launch_training(dataset_json, optimizer_name, params_dict,
-                    train_params, plot_validation = True, checkpoint_fct = None,
-                    dataset_params = None):
+                    train_params, plot_validation = True, checkpoint_fct = None):
     def save_model(filename):
         try:
             # we call the method on .module because otherwise the pms file
@@ -297,7 +299,10 @@ def launch_training(dataset_json, optimizer_name, params_dict,
 
     now = datetime.now()
     train, validation, test = prepare_dataset(dataset_json)
+    print('Train set:')
     print(train)
+    print('Validation set:')
+    print(validation)
     gnn_model = generate_gnn_model(params_dict)
     save_data = True
     # check if MPI is supported
@@ -313,13 +318,12 @@ def launch_training(dataset_json, optimizer_name, params_dict,
         if save_data:
             save_model(folder + '/initial_gnn.pms')
 
-    gnn_model, train_loader, loss, mae, coefs_dict, dataset = train_gnn_model(gnn_model,
+    gnn_model, train_loader, loss, mae, coefs_dict, dataset, dataset_params = train_gnn_model(gnn_model,
                                                                               train,
                                                                               validation,
                                                                               optimizer_name,
                                                                               train_params,
-                                                                              checkpoint_fct,
-                                                                              dataset_params)
+                                                                              checkpoint_fct)
 
     split = {'train': train.tolist(), 'validation': validation.tolist(), 'test': test.tolist()}
 
@@ -356,7 +360,7 @@ if __name__ == "__main__":
     except RuntimeError:
         print("MPI not supported. Running serially.")
 
-    dataset_json = json.load(open('training_dataset_all.json'))
+    dataset_json = json.load(open('../graphs/normalized_data/dataset_list.json'))
 
     # params_dict = {'infeat_nodes': 13,
     #                'infeat_edges': 4,
@@ -367,7 +371,7 @@ if __name__ == "__main__":
     #                'hl_mlp': 1,
     #                'normalize': 1,
     #                'average_flowrate_training': 0}
-    params_dict = {'infeat_nodes': 23,
+    params_dict = {'infeat_nodes': 27,
                    'infeat_edges': 4,
                    'latent_size_gnn': 8,
                    'latent_size_mlp': 32,
@@ -380,20 +384,15 @@ if __name__ == "__main__":
                     'weight_decay': 0.36984122162067234,
                     'momentum': 0.0,
                     'batch_size': 100,
-                    'nepochs': 200,
+                    'nepochs': 1,
                     'continuity_coeff': -3,
                     'bc_coeff': -5,
                     'weight_decay': 1e-5}
-    dataset_params = {'normalization': 'standard',
-                      'rate_noise': 1e-5,
-                      'label_normalization': 'min_max',
-                      'augment_data': 0,
-                      'add_noise': False,
-                      'noise_stdv': 1e-10}
+
 
     start = time.time()
     launch_training(dataset_json,  'adam', params_dict, train_params,
-                    checkpoint_fct = None, dataset_params = dataset_params)
+                    checkpoint_fct = None)
 
     end = time.time()
     elapsed_time = end - start
