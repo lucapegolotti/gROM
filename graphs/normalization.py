@@ -30,6 +30,15 @@ def get_times(graph):
 
     return times
 
+def get_actual_times(graph, coefs_dict):
+    times =np.array(get_times(graph))
+    dt = graph.nodes['branch'].data['dt'][0].detach().numpy()
+    dt = invert_normalize_function(dt, 'dt', coefs_dict)
+
+    times = (times - times[0]) * dt
+
+    return times
+
 def free_fields(graph, times):
     def per_node_type(node_type):
         for t in times:
@@ -86,7 +95,7 @@ def min_max_normalization(graph, fields, bounds_dict):
                 if field in feat:
                     if np.linalg.norm(np.min(graph.nodes[node_type].data[feat].detach().numpy()) - 0) > 1e-5 and \
                        np.linalg.norm(np.max(graph.nodes[node_type].data[feat].detach().numpy()) - 1) > 1e-5:
-                           graph.nodes[node_type].data[feat] = min_max(graph.nodes[node_type].data[feat], bounds_dict[field])
+                           graph.nodes[node_type].data[feat] = min_max(graph.nodes[node_type].data[feat], bounds_dict[field]).float()
 
     def per_edge_type(edge_type):
         edge_features = graph.edges[edge_type].data
@@ -95,7 +104,7 @@ def min_max_normalization(graph, fields, bounds_dict):
                 if field in feat:
                     if np.linalg.norm(np.min(graph.edges[edge_type].data[feat].detach().numpy()) - 0) > 1e-5 and \
                        np.linalg.norm(np.max(graph.edges[edge_type].data[feat].detach().numpy()) - 1) > 1e-5:
-                           graph.edges[edge_type].data[feat] = min_max(graph.edges[edge_type].data[feat], bounds_dict[field])
+                           graph.edges[edge_type].data[feat] = min_max(graph.edges[edge_type].data[feat], bounds_dict[field]).float()
 
     per_node_type('branch')
     per_node_type('junction')
@@ -140,16 +149,14 @@ def standard_normalization(graph, fields, coeffs_dict):
         for feat in node_features:
             for field in fields:
                 if field in feat:
-                    if feat == 'dt':
-                        graph.nodes[node_type].data['original_dt'] = graph.nodes[node_type].data[feat]
-                    graph.nodes[node_type].data[feat] = standardize(graph.nodes[node_type].data[feat], coeffs_dict[field])
+                    graph.nodes[node_type].data[feat] = standardize(graph.nodes[node_type].data[feat], coeffs_dict[field]).float()
 
     def per_edge_type(edge_type):
         edge_features = graph.edges[edge_type].data
         for feat in edge_features:
             for field in fields:
                 if field in feat:
-                    graph.edges[edge_type].data[feat] = standardize(graph.edges[edge_type].data[feat], coeffs_dict[field])
+                    graph.edges[edge_type].data[feat] = standardize(graph.edges[edge_type].data[feat], coeffs_dict[field]).float()
 
     per_node_type('branch')
     per_node_type('junction')
@@ -334,10 +341,9 @@ def compute_statistics(graphs, fields, coefs_dict):
         # we use an unbiased estimator
         cstdv = np.sqrt(1 / (N-1) * sumv)
 
-
-        if len(cmean) == 1:
+        if type(cmean) == list and len(cmean) == 1:
             cmean = cmean[0]
-        if len(cstdv) == 1:
+        if type(cstdv) == list and len(cstdv) == 1:
             cstdv = cstdv[0]
         coefs_dict[field] = {'min': minv,
                              'max': maxv,
@@ -351,15 +357,12 @@ def normalize_graphs(graphs, fields, coefs_dict):
 
     ntype = coefs_dict['type']
 
-    for graph in graphs:
+    for name in graphs:
+        graph = graphs[name]
         if ntype == 'min_max':
             min_max_normalization(graph, fields, coefs_dict)
         if ntype == 'standard':
             standard_normalization(graph, fields, coefs_dict)
-
-        norm_graphs.append(graph)
-
-    return norm_graphs
 
 def normalize(graphs, ntype, coefs_dict = None):
     fields = {'pressure', 'flowrate', 'area', 'position', 'distance', 'dt'}
@@ -368,14 +371,14 @@ def normalize(graphs, ntype, coefs_dict = None):
     if coefs_dict == None:
         coefs_dict = {}
         coefs_dict['type'] = ntype
-        coefs_dict = compute_statistics(graphs, fields, coefs_dict)
+        coefs_dict = compute_statistics(graphs.values(), fields, coefs_dict)
     end = time.time()
     elapsed_time = end - start
     print('\tstatistics computed in {:0.2f} s'.format(elapsed_time))
 
-    norm_graphs = normalize_graphs(graphs, fields, coefs_dict)
+    normalize_graphs(graphs, fields, coefs_dict)
 
-    return norm_graphs, coefs_dict
+    return coefs_dict
 
 def rotate_graph(graph):
     # we want to the keep the scale close to one otherwise flowrate and pressure
@@ -388,7 +391,7 @@ def rotate_graph(graph):
     R, _ = np.linalg.qr(np.random.rand(3,3))
 
     def rotate_array(inarray):
-        inarray = np.matmul(inarray,R) * scale
+        inarray = (np.matmul(inarray,R) * scale).float()
     #
     # def scale_array(inarray):
     #     inarray = inarray * scale
@@ -419,8 +422,9 @@ def rotate_graph(graph):
 
 def normalize_dataset(data_folder, dataset_params,  output_dir = 'normalized_data/'):
     graphs_names = os.listdir(data_folder)
+    graphs_names = graphs_names
 
-    graphs = []
+    graphs = {}
     start = time.time()
     count = 0
     models = set()
@@ -432,7 +436,7 @@ def normalize_dataset(data_folder, dataset_params,  output_dir = 'normalized_dat
                     models.add(name[0:9])
                     bincount = bincount + 1
             print('Loading ' + str(count) + ': ' + name + ', bincount = ' + str(bincount))
-            graphs.append(load_graphs(data_folder + '/' + name)[0][0])
+            graphs[name] = load_graphs(data_folder + '/' + name)[0][0]
             count = count + 1
 
     end = time.time()
@@ -443,13 +447,15 @@ def normalize_dataset(data_folder, dataset_params,  output_dir = 'normalized_dat
     models_dict['dataset'] = list(models)
     models_dict['training'] = 0.9
     models_dict['validation'] = 1 - 0.9
+    pathlib.Path(output_dir).mkdir(parents=True, exist_ok=True)
     with open(output_dir + '/dataset_list.json', 'w') as outfile:
         json.dump(models_dict, outfile, indent=4)
 
     # print dataset statistics
     nnodes = 0
     nedges = 0
-    for graph in graphs:
+    for name in graphs:
+        graph = graphs[name]
         nnodes = nnodes + graph.nodes['branch'].data['x'].shape[0]
         nnodes = nnodes + graph.nodes['junction'].data['x'].shape[0]
         nedges = nedges + graph.edges['branch_to_branch'].data['position'].shape[0]
@@ -464,10 +470,10 @@ def normalize_dataset(data_folder, dataset_params,  output_dir = 'normalized_dat
 
     print('Rotating graphs')
     start = time.time()
-    for igraph in range(numgraphs):
+    for name in graphs:
         # we only rotate the models with model version != 0
-        if '.0.' not in graphs_names[igraph]:
-            rotate_graph(graphs[igraph])
+        if '.0.' not in name:
+            rotate_graph(graphs[name])
     end = time.time()
     elapsed_time = end - start
     print('Graphs rotated in {:0.2f} s'.format(elapsed_time))
@@ -475,15 +481,13 @@ def normalize_dataset(data_folder, dataset_params,  output_dir = 'normalized_dat
     print('Normalizing graphs')
     start = time.time()
     normalization_type = dataset_params['normalization']
-    graphs, coefs_dict = normalize(graphs, normalization_type)
+    coefs_dict = normalize(graphs, normalization_type)
     end = time.time()
     elapsed_time = end - start
     print('Graphs normalized in {:0.2f} s'.format(elapsed_time))
 
-    pathlib.Path(output_dir).mkdir(parents=True, exist_ok=True)
-    for igraph in range(numgraphs):
-        dgl.save_graphs(output_dir + '/' + graphs_names[igraph],
-                        graphs[igraph])
+    for name in graphs:
+        dgl.save_graphs(output_dir + '/' + name, graphs[name])
 
     def default(obj):
         if isinstance(obj, torch.Tensor):

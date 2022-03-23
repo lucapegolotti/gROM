@@ -1,7 +1,7 @@
 import sys
 
-sys.path.append("../graphs/core")
-sys.path.append("../network/")
+sys.path.append("../graphs")
+sys.path.append("../network")
 
 import io_utils as io
 import matplotlib.pyplot as plt
@@ -13,6 +13,7 @@ from matplotlib import animation
 import preprocessing as pp
 import matplotlib.cm as cm
 import random
+import normalization as nrmz
 
 def circle3D(center, normal, radius, npoints):
     theta = np.linspace(0, 2 * np.pi, npoints)
@@ -67,7 +68,7 @@ def plot_3D_graph(graph, state = None, coefs = None, bounds = None, field_name =
         finner = state[field_name]['inner']
         field = np.concatenate((fin,fout,finner),axis=0)
 
-        field = pp.invert_normalize_function(field, field_name, coefs)
+        field = nrmz.invert_normalize_function(field, field_name, coefs)
 
         if type(bounds[field_name]['min']) == list:
             bounds[field_name]['min'] = np.asarray(bounds[field_name]['min'])
@@ -288,7 +289,7 @@ def plot_linear(pressures_branch_pred, flowrates_branch_pred,
                                       flowrates_junction_pred[ind]), axis=0))
         selected_real_flowrate.append(np.concatenate((flowrates_branch_real[ind],
                                       flowrates_junction_real[ind]), axis=0))
-        selected_times.append(times[0,ind])
+        selected_times.append(times[ind])
 
     pressures_pred = selected_pred_pressure
     pressures_real = selected_real_pressure
@@ -300,19 +301,19 @@ def plot_linear(pressures_branch_pred, flowrates_branch_pred,
     fig, ax = plt.subplots(2, dpi=284)
 
     scatter_real_p = ax[0].scatter(range(0,nnodes), \
-                                   pp.invert_normalize_function(pressures_real[0], \
+                                   nrmz.invert_normalize_function(pressures_real[0], \
                                    'pressure',coefs_dict) / 1333.2, color='black', \
                                    s = 1.5, alpha = 0.3)
     scatter_pred_p = ax[0].scatter(range(0,nnodes), \
-                                   pp.invert_normalize_function(pressures_pred[0], \
+                                   nrmz.invert_normalize_function(pressures_pred[0], \
                                    'pressure',coefs_dict) / 1333.2, color=colors, \
                                    s = 1)
     scatter_real_q = ax[1].scatter(range(0,nnodes), \
-                                   pp.invert_normalize_function(flowrates_real[0], \
+                                   nrmz.invert_normalize_function(flowrates_real[0], \
                                    'flowrate',coefs_dict),
                                    color='black', s = 1.5, alpha = 0.3)
     scatter_pred_q = ax[1].scatter(range(0,nnodes), \
-                                   pp.invert_normalize_function(flowrates_pred[0], \
+                                   nrmz.invert_normalize_function(flowrates_pred[0], \
                                    'flowrate',coefs_dict), color=colors, s = 1)
 
     nodesidxs = np.expand_dims(np.arange(nnodes),axis=1)
@@ -320,16 +321,16 @@ def plot_linear(pressures_branch_pred, flowrates_branch_pred,
     ax[0].set_ylabel('pressure [mmHg]')
     ax[1].set_ylabel('flowrate [cc^3/s]')
     def animation_frame(i):
-        dp = pp.invert_normalize_function(pressures_pred[i],'pressure',coefs_dict) / 1333.2
+        dp = nrmz.invert_normalize_function(pressures_pred[i],'pressure',coefs_dict) / 1333.2
         dp = np.concatenate((nodesidxs, dp),axis = 1)
         scatter_pred_p.set_offsets(dp)
-        dp = pp.invert_normalize_function(pressures_real[i],'pressure',coefs_dict) / 1333.2
+        dp = nrmz.invert_normalize_function(pressures_real[i],'pressure',coefs_dict) / 1333.2
         dp = np.concatenate((nodesidxs, dp),axis = 1)
         scatter_real_p.set_offsets(dp)
-        dq = pp.invert_normalize_function(flowrates_pred[i],'flowrate',coefs_dict)
+        dq = nrmz.invert_normalize_function(flowrates_pred[i],'flowrate',coefs_dict)
         dq = np.concatenate((nodesidxs, dq),axis = 1)
         scatter_pred_q.set_offsets(dq)
-        dq = pp.invert_normalize_function(flowrates_real[i],'flowrate',coefs_dict)
+        dq = nrmz.invert_normalize_function(flowrates_real[i],'flowrate',coefs_dict)
         dq = np.concatenate((nodesidxs, dq),axis = 1)
         scatter_real_q.set_offsets(dq)
         ax[0].set_title('{:.2f} s'.format(float(times[i])))
@@ -355,7 +356,7 @@ def plot_3D(model_name, states, times,
     selected_states = []
     for ind in indices:
         selected_states.append(states[ind])
-        selected_times.append(times[0,ind])
+        selected_times.append(times[ind])
 
     states = selected_states
     times = selected_times
@@ -374,7 +375,7 @@ def plot_3D(model_name, states, times,
         fout = state[field_name]['outlet']
         finner = state[field_name]['inner']
         field = np.concatenate((fin,fout,finner),axis=0)
-        field = pp.invert_normalize_function(field, field_name, coefs_dict)
+        field = nrmz.invert_normalize_function(field, field_name, coefs_dict)
 
         C = (field - coefs_dict[field_name]['min']) / \
             (coefs_dict[field_name]['max'] - coefs_dict[field_name]['min'])
@@ -404,13 +405,13 @@ def plot_static(graph, pressures_branch_pred, flowrates_branch_pred,
     real_p = []
     real_q = []
     for i in range(times.size):
-        p = pp.invert_normalize_function(pressures_branch_pred[i],'pressure',coefs_dict) / 1333.2
+        p = nrmz.invert_normalize_function(pressures_branch_pred[i],'pressure',coefs_dict) / 1333.2
         pred_p.append(p[idxs,0])
-        p = pp.invert_normalize_function(pressures_branch_real[i],'pressure',coefs_dict) / 1333.2
+        p = nrmz.invert_normalize_function(pressures_branch_real[i],'pressure',coefs_dict) / 1333.2
         real_p.append(p[idxs,0])
-        q = pp.invert_normalize_function(flowrates_branch_pred[i],'flowrate',coefs_dict)
+        q = nrmz.invert_normalize_function(flowrates_branch_pred[i],'flowrate',coefs_dict)
         pred_q.append(q[idxs,0])
-        q = pp.invert_normalize_function(flowrates_branch_real[i],'flowrate',coefs_dict)
+        q = nrmz.invert_normalize_function(flowrates_branch_real[i],'flowrate',coefs_dict)
         real_q.append(q[idxs,0])
 
     cmap = cm.get_cmap("cool")
@@ -424,7 +425,7 @@ def plot_static(graph, pressures_branch_pred, flowrates_branch_pred,
         plt.plot(times.squeeze(), real_p[:,i], color=c, linestyle='dashed', linewidth=1)
         plt.plot(times.squeeze(), pred_p[:,i], color=c, linewidth=2)
 
-    ax.set_xlim(times[0,0],times[0,-1])
+    ax.set_xlim(times[0],times[-1])
     ax.set_xlabel('time [s]')
     ax.set_ylabel('pressure [mmHg]')
     plt.savefig(outdir + '/pressure_vs_time.png')
@@ -438,7 +439,7 @@ def plot_static(graph, pressures_branch_pred, flowrates_branch_pred,
         plt.plot(times.squeeze(), real_q[:,i], color=c, linestyle='dashed', linewidth=1)
         plt.plot(times.squeeze(), pred_q[:,i], color=c, linewidth=2)
 
-    ax.set_xlim(times[0,0],times[0,-1])
+    ax.set_xlim(times[0],times[-1])
     ax.set_xlabel('time [s]')
     ax.set_ylabel('flowrate [cc^3/s]')
     plt.savefig(outdir + '/flowrate_vs_time.png')

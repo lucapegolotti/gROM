@@ -5,6 +5,7 @@ import os
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
 sys.path.append("../tools")
+sys.path.append("../graphs")
 
 import dgl
 import torch
@@ -24,24 +25,7 @@ import plot_tools as ptools
 import matplotlib.cm as cm
 import shutil
 import pathlib
-
-def test_train(gnn_model, model_name, dataset):
-    num_examples = len(dataset)
-    num_train = int(num_examples)
-    train_sampler = SubsetRandomSampler(torch.arange(num_train))
-    train_dataloader = GraphDataLoader(dataset, sampler=train_sampler,
-                                       batch_size=1,
-                                       drop_last=False)
-
-    global_loss, count, elapsed, global_mae = training.evaluate_model(gnn_model, \
-                                              train_dataloader, \
-                                              training.mse, \
-                                              training.mae)
-    print('\tloss = {:.2e}\tmae = {:.2e}\ttime = {:.2f} s'.format(global_loss/count,
-                                                                  global_mae/count,
-                                                                  elapsed))
-
-    return coefs_dict
+import normalization as nrmz
 
 def get_color_nodes(graph, cmap = cm.get_cmap("plasma")):
     nnodes = graph.nodes['inner'].data['x'].shape[0]
@@ -70,7 +54,7 @@ def compute_min_max_list(tlist, field_name, coefs):
     MM = np.NINF
 
     for el in tlist:
-        eln = pp.invert_normalize_function(el, field_name, coefs)
+        eln = nrmz.invert_normalize_function(el, field_name, coefs)
         mm = np.min([np.min(eln), mm])
         MM = np.max([np.max(eln), MM])
 
@@ -98,13 +82,12 @@ def get_color_nodes(graph, cmap = cm.get_cmap("plasma")):
 
     return color_node
 
-
 def test_rollout(model, params, dataset, index_graph, split, out_folder):
     model.eval()
     graph = dataset.lightgraphs[index_graph]
     model_name = params['dataset_parameters']['split'][split][index_graph]
-    true_graph = load_graphs('../graphs/data/' + model_name + '.grph')[0][0]
-    times = pp.get_times(true_graph)
+    true_graph = load_graphs('../graphs/normalized_data/' + model_name + '.0.grph')[0][0]
+    times = nrmz.get_times(true_graph)
 
     coefs_dict = params['normalization_coefficients']['features']
     label_coefs = params['normalization_coefficients']['labels']
@@ -133,22 +116,14 @@ def test_rollout(model, params, dataset, index_graph, split, out_folder):
         def bring_to_range_q(flowrate):
             return flowrate
 
-    pressure_dict = {'branch': pp.normalize_function(true_graph.nodes['branch'].data['pressure_0'],
-                              'pressure', coefs_dict),
-                     'junction': pp.normalize_function(true_graph.nodes['junction'].data['pressure_0'],
-                              'pressure', coefs_dict),
-                     'inlet': pp.normalize_function(true_graph.nodes['inlet'].data['pressure_0'],
-                             'pressure', coefs_dict),
-                     'outlet': pp.normalize_function(true_graph.nodes['outlet'].data['pressure_0'],
-                             'pressure', coefs_dict)}
-    flowrate_dict = {'branch': pp.normalize_function(true_graph.nodes['branch'].data['flowrate_0'],
-                             'flowrate', coefs_dict),
-                     'junction': pp.normalize_function(true_graph.nodes['junction'].data['flowrate_0'],
-                             'flowrate', coefs_dict),
-                     'inlet': pp.normalize_function(true_graph.nodes['inlet'].data['flowrate_0'],
-                             'flowrate', coefs_dict),
-                     'outlet': pp.normalize_function(true_graph.nodes['outlet'].data['flowrate_0'],
-                             'flowrate', coefs_dict)}
+    pressure_dict = {'branch': true_graph.nodes['branch'].data['pressure_0'],
+                     'junction': true_graph.nodes['junction'].data['pressure_0'],
+                     'inlet': true_graph.nodes['inlet'].data['pressure_0'],
+                     'outlet': true_graph.nodes['outlet'].data['pressure_0']}
+    flowrate_dict = {'branch': true_graph.nodes['branch'].data['flowrate_0'],
+                     'junction': true_graph.nodes['junction'].data['flowrate_0'],
+                     'inlet': true_graph.nodes['inlet'].data['flowrate_0'],
+                     'outlet': true_graph.nodes['outlet'].data['flowrate_0']}
 
     new_state = {'pressure': pressure_dict, 'flowrate': flowrate_dict}
 
@@ -181,15 +156,15 @@ def test_rollout(model, params, dataset, index_graph, split, out_folder):
     total_flowrate = 0
     for t in range(len(times)-1):
         tp1 = t+1
-        next_pressure_branch = pp.normalize_function(true_graph.nodes['branch'].data['pressure_' + str(tp1)], 'pressure', coefs_dict)
-        next_flowrate_branch = pp.normalize_function(true_graph.nodes['branch'].data['flowrate_' + str(tp1)], 'flowrate', coefs_dict)
-        next_pressure_junction = pp.normalize_function(true_graph.nodes['junction'].data['pressure_' + str(tp1)], 'pressure', coefs_dict)
-        next_flowrate_junction = pp.normalize_function(true_graph.nodes['junction'].data['flowrate_' + str(tp1)], 'flowrate', coefs_dict)
+        next_pressure_branch = true_graph.nodes['branch'].data['pressure_' + str(tp1)]
+        next_flowrate_branch = true_graph.nodes['branch'].data['flowrate_' + str(tp1)]
+        next_pressure_junction = true_graph.nodes['junction'].data['pressure_' + str(tp1)]
+        next_flowrate_junction = true_graph.nodes['junction'].data['flowrate_' + str(tp1)]
 
-        pressure_dict = {'inlet': pp.normalize_function(true_graph.nodes['inlet'].data['pressure_' + str(tp1)], 'pressure', coefs_dict),
-                         'outlet': pp.normalize_function(true_graph.nodes['outlet'].data['pressure_' + str(tp1)], 'pressure', coefs_dict)}
-        flowrate_dict = {'inlet': pp.normalize_function(true_graph.nodes['inlet'].data['flowrate_' + str(tp1)], 'flowrate', coefs_dict),
-                         'outlet': pp.normalize_function(true_graph.nodes['outlet'].data['flowrate_' + str(tp1)], 'flowrate', coefs_dict)}
+        pressure_dict = {'inlet': true_graph.nodes['inlet'].data['pressure_' + str(tp1)],
+                         'outlet': true_graph.nodes['outlet'].data['pressure_' + str(tp1)]}
+        flowrate_dict = {'inlet': true_graph.nodes['inlet'].data['flowrate_' + str(tp1)],
+                         'outlet': true_graph.nodes['outlet'].data['flowrate_' + str(tp1)]}
 
         new_bcs = {'pressure': pressure_dict, 'flowrate': flowrate_dict}
 
@@ -206,7 +181,8 @@ def test_rollout(model, params, dataset, index_graph, split, out_folder):
 
         c_loss = gnn_model.compute_continuity_loss(graph, pred_branch, pred_junction, label_coefs, coefs_dict)
         c_loss_total = c_loss_total + float(c_loss.detach().numpy())
-        total_flowrate = total_flowrate + float(true_graph.nodes['inlet'].data['flowrate_' + str(tp1)].detach().numpy())
+        fr = float(true_graph.nodes['inlet'].data['flowrate_' + str(tp1)].detach().numpy())
+        total_flowrate = total_flowrate + nrmz.invert_normalize_function(fr, 'flowrate', coefs_dict)
 
         dp_branch = bring_to_range_p(pred_branch[:,0].detach().numpy())
 
@@ -259,7 +235,6 @@ def test_rollout(model, params, dataset, index_graph, split, out_folder):
 
         exact_state = {'pressure': pressure_dict_exact, 'flowrate': flowrate_dict_exact}
 
-
         pressures_branch_real.append(next_pressure_branch.detach().numpy())
         pressures_junction_real.append(next_pressure_junction.detach().numpy())
         flowrates_branch_real.append(next_flowrate_branch.detach().numpy())
@@ -268,7 +243,7 @@ def test_rollout(model, params, dataset, index_graph, split, out_folder):
         pressure_dict = {'branch': torch.from_numpy(np.expand_dims(p_branch,axis=1)),
                          'junction': torch.from_numpy(np.expand_dims(p_junction,axis=1)),
                          'inlet': graph.nodes['inlet'].data['pressure_next'],
-                         'outlet': graph.nodes['outlet'].data['pressure_next'],}
+                         'outlet': graph.nodes['outlet'].data['pressure_next']}
         flowrate_dict = {'branch': torch.from_numpy(np.expand_dims(q_branch,axis=1)),
                          'junction': torch.from_numpy(np.expand_dims(q_junction,axis=1)),
                          'inlet': graph.nodes['inlet'].data['flowrate_next'],
@@ -318,26 +293,8 @@ def test_rollout(model, params, dataset, index_graph, split, out_folder):
 
         ptools.plot_static(graph, pressures_branch_pred, flowrates_branch_pred,
                            pressures_branch_real, flowrates_branch_real,
-                           graph.nodes['params'].data['times'].detach().numpy(),
+                           nrmz.get_actual_times(true_graph, coefs_dict),
                            coefs_dict, npoints=3, outdir=out_folder)
-
-        print3D = False
-        if print3D:
-            ptools.plot_3D(model_name, pred_states, graph.nodes['params'].data['times'].detach().numpy(),
-                            coefs_dict, bounds, 'pressure', outfile_name=out_folder + '/3d_pressure_pred.mp4',
-                            time = 5)
-
-            ptools.plot_3D(model_name, real_states, graph.nodes['params'].data['times'].detach().numpy(),
-                            coefs_dict, bounds, 'pressure', outfile_name=out_folder + '/3d_pressure_real.mp4',
-                            time = 5)
-
-            ptools.plot_3D(model_name, pred_states, graph.nodes['params'].data['times'].detach().numpy(),
-                            coefs_dict, bounds, 'flowrate', outfile_name=out_folder + '/3d_flowrate_pred.mp4',
-                            time = 5)
-
-            ptools.plot_3D(model_name, real_states, graph.nodes['params'].data['times'].detach().numpy(),
-                            coefs_dict, bounds, 'flowrate', outfile_name=out_folder + '/3d_flowrate_real.mp4',
-                            time = 5)
 
         color_nodes = get_color_nodes(graph)
 
@@ -346,7 +303,7 @@ def test_rollout(model, params, dataset, index_graph, split, out_folder):
                            pressures_branch_real, flowrates_branch_real,
                            pressures_junction_real, flowrates_junction_real,
                            color_nodes,
-                           graph.nodes['params'].data['times'].detach().numpy(),
+                           nrmz.get_actual_times(true_graph, coefs_dict),
                            coefs_dict, bounds, out_folder + '/linear.mp4', time = 5)
 
         ptools.plot_node_types(graph, color_nodes, out_folder + '/node_types.mp4', time = 5)
@@ -354,7 +311,68 @@ def test_rollout(model, params, dataset, index_graph, split, out_folder):
     return err_p_branch, err_q_branch, err_p_junction, err_q_junction, \
            err_p, err_q, c_loss_total / total_flowrate
 
+def evaluate_all_models(dataset, split_name, gnn_model, params):
+    num_examples = len(params['dataset_parameters']['split'][split_name])
+    coefs_dict = dataset.coefs_dict
+
+    print('==========' + split_name + '==========')
+    tot_err_p_branch = 0
+    tot_err_q_branch = 0
+    tot_err_p_junction = 0
+    tot_err_q_junction = 0
+    tot_err_p = 0
+    tot_err_q = 0
+    tot_continuity = 0
+    if os.path.exists('results_' + split_name):
+        shutil.rmtree('results_' + split_name)
+    pathlib.Path('results_' + split_name).mkdir(parents=True, exist_ok=True)
+    for i in range(num_examples):
+        model_name = params['dataset_parameters']['split'][split_name][i]
+        print('model name = ' + model_name)
+        pathlib.Path('results_' + split_name + '/' + model_name).mkdir(parents=True, exist_ok=True)
+        err_p_branch, err_q_branch, err_p_junction, \
+        err_q_junction, err_p, err_q, cont = test_rollout(gnn_model, params,
+                                                   dataset, index_graph = i,
+                                                   split = split_name,
+                                                   out_folder = 'results_' + split_name + '/' + model_name)
+        tot_err_p_branch = tot_err_p_branch + err_p_branch
+        tot_err_q_branch = tot_err_q_branch + err_q_branch
+        tot_err_p_junction = tot_err_p_junction + err_p_junction
+        tot_err_q_junction = tot_err_q_junction + err_q_junction
+        tot_err_p = tot_err_p + err_p
+        tot_err_q = tot_err_q + err_q
+        tot_continuity = tot_continuity + cont
+
+    print('----------------------------')
+    print('Global statistics')
+    print('Error pressure branches = ' + str(tot_err_p_branch / num_examples))
+    print('Error flowrate branches = ' + str(tot_err_q_branch / num_examples))
+    print('Error pressure junction = ' + str(tot_err_p_junction / num_examples))
+    print('Error flowrate junction = ' + str(tot_err_q_junction / num_examples))
+    print('Error pressure = ' + str(tot_err_p / num_examples))
+    print('Error flowrate = ' + str(tot_err_q / num_examples))
+    print('Error continuity = ' + str(tot_continuity / num_examples))
+
+def check_loss(gnn_model, dataset, loss, parameters):
+    num_examples = int(len(dataset))
+    sampler = SubsetRandomSampler(torch.arange(num_examples))
+
+    dataloader = GraphDataLoader(dataset, sampler=sampler,
+                                   batch_size=1,
+                                   # batch_size=parameters['train_parameters']['batch_size'],
+                                   drop_last=False)
+
+    results, _, elapsed = training.evaluate_model(gnn_model,
+                                         dataloader, loss)
+
+    msg = 'results: '
+    msg = msg + 'train_loss = {:.2e} '.format(results['global_loss']/results['count'])
+    msg = msg + 'train_con_loss = {:.2e} '.format(results['continuity_loss']/results['count'])
+    msg = msg + 'time = {:.2f} s'.format(elapsed)
+    print(msg)
+
 if __name__ == "__main__":
+    # trained model folder
     path = sys.argv[1]
 
     params = json.load(open(path + '/parameters.json'))
@@ -363,93 +381,13 @@ if __name__ == "__main__":
     gnn_model.load_state_dict(torch.load(path + '/trained_gnn.pms'))
     gnn_model.eval()
 
-    num_validation = len(params['dataset_parameters']['split']['validation'])
 
-    dataset = pp.generate_dataset(params['dataset_parameters']['split']['validation'],
-                                  dataset_params = params['dataset_parameters'],
-                                  coefs_dict = params['normalization_coefficients']['features'])
+    dataset, _ = pp.generate_dataset(params['dataset_parameters']['split']['train'], \
+                                     "../graphs/normalized_data")
+    check_loss(gnn_model, dataset, training.mse, params)
+    evaluate_all_models(dataset, 'train', gnn_model, params)
 
-    coefs_dict = dataset.coefs_dict
+    dataset, _ = pp.generate_dataset(params['dataset_parameters']['split']['validation'], \
+                                     "../graphs/normalized_data")
 
-    print('==========VALIDATION==========')
-    tot_err_p_branch = 0
-    tot_err_q_branch = 0
-    tot_err_p_junction = 0
-    tot_err_q_junction = 0
-    tot_err_p = 0
-    tot_err_q = 0
-    tot_continuity = 0
-    if os.path.exists('results_validation'):
-        shutil.rmtree('results_validation')
-    pathlib.Path('results_validation').mkdir(parents=True, exist_ok=True)
-    for i in range(num_validation):
-        model_name = params['dataset_parameters']['split']['validation'][i]
-        print('model name = ' + model_name)
-        pathlib.Path('results_validation/' + model_name).mkdir(parents=True, exist_ok=True)
-        err_p_branch, err_q_branch, err_p_junction, \
-        err_q_junction, err_p, err_q, cont = test_rollout(gnn_model, params,
-                                                   dataset, index_graph = i,
-                                                   split = 'validation',
-                                                   out_folder = 'results_validation/' + model_name)
-        tot_err_p_branch = tot_err_p_branch + err_p_branch
-        tot_err_q_branch = tot_err_q_branch + err_q_branch
-        tot_err_p_junction = tot_err_p_junction + err_p_junction
-        tot_err_q_junction = tot_err_q_junction + err_q_junction
-        tot_err_p = tot_err_p + err_p
-        tot_err_q = tot_err_q + err_q
-        tot_continuity = tot_continuity + cont
-
-    print('----------------------------')
-    print('Global statistics')
-    print('Error pressure branches = ' + str(tot_err_p_branch / num_validation))
-    print('Error flowrate branches = ' + str(tot_err_q_branch / num_validation))
-    print('Error pressure junction = ' + str(tot_err_p_junction / num_validation))
-    print('Error flowrate junction = ' + str(tot_err_q_junction / num_validation))
-    print('Error pressure = ' + str(tot_err_p / num_validation))
-    print('Error flowrate = ' + str(tot_err_q / num_validation))
-    print('Error continuity = ' + str(tot_continuity / num_validation))
-
-    num_train = len(params['dataset_parameters']['split']['train'])
-
-    dataset = pp.generate_dataset(params['dataset_parameters']['split']['train'],
-                                  dataset_params = params['dataset_parameters'],
-                                  coefs_dict = params['normalization_coefficients']['features'])
-    coefs_dict = dataset.coefs_dict
-
-    print('==========TRAIN==========')
-    tot_err_p_branch = 0
-    tot_err_q_branch = 0
-    tot_err_p_junction = 0
-    tot_err_q_junction = 0
-    tot_err_p = 0
-    tot_err_q = 0
-    tot_continuity = 0
-    if os.path.exists('results_train'):
-        shutil.rmtree('results_train')
-    pathlib.Path('results_train').mkdir(parents=True, exist_ok=True)
-    for i in range(num_train):
-        model_name = params['dataset_parameters']['split']['train'][i]
-        print('model name = ' + model_name)
-        pathlib.Path('results_train/' + model_name).mkdir(parents=True, exist_ok=True)
-        err_p_branch, err_q_branch, err_p_junction, \
-        err_q_junction, err_p, err_q, cont = test_rollout(gnn_model, params,
-                                                  dataset, index_graph = i,
-                                                  split = 'train',
-                                                  out_folder = 'results_train/' + model_name)
-        tot_err_p_branch = tot_err_p_branch + err_p_branch
-        tot_err_q_branch = tot_err_q_branch + err_q_branch
-        tot_err_p_junction = tot_err_p_junction + err_p_junction
-        tot_err_q_junction = tot_err_q_junction + err_q_junction
-        tot_err_p = tot_err_p + err_p
-        tot_err_q = tot_err_q + err_q
-        tot_continuity = tot_continuity + cont
-
-    print('----------------------------')
-    print('Global statistics')
-    print('Error pressure branches = ' + str(tot_err_p_branch / num_train))
-    print('Error flowrate branches = ' + str(tot_err_q_branch / num_train))
-    print('Error pressure junction = ' + str(tot_err_p_junction / num_train))
-    print('Error flowrate junction = ' + str(tot_err_q_junction / num_train))
-    print('Error pressure = ' + str(tot_err_p / num_train))
-    print('Error flowrate = ' + str(tot_err_q / num_train))
-    print('Error continuity = ' + str(tot_continuity / num_train))
+    evaluate_all_models(dataset, 'validation', gnn_model, params)

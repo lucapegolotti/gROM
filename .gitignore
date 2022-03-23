@@ -1,6 +1,8 @@
 .DS_Store
 vtps*
+*data_*
 data
+*_data*
 __pycache__
 models
 gromenv

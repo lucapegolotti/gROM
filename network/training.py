@@ -79,7 +79,8 @@ def evaluate_model(gnn_model, train_dataloader, loss, metric = None,
                 label = batched_graph.nodes['branch'].data['n_labels'].float()
 
             try:
-                c_loss = gnn_model.module.compute_continuity_loss(batched_graph, pred_branch, pred_junction, label_coefs, coefs_dict)
+                if continuity_coeff > 1e-5:
+                    c_loss = gnn_model.module.compute_continuity_loss(batched_graph, pred_branch, pred_junction, label_coefs, coefs_dict)
                 bc_loss = gnn_model.module.compute_bc_loss(batched_graph,
                                                     batched_graph.nodes['branch'].data['n_features'],
                                                     batched_graph.nodes['junction'].data['n_features'],
@@ -89,7 +90,8 @@ def evaluate_model(gnn_model, train_dataloader, loss, metric = None,
                                                     pred_junction,
                                                     label_coefs)
             except AttributeError:
-                c_loss = gnn_model.compute_continuity_loss(batched_graph, pred_branch, pred_junction, label_coefs, coefs_dict)
+                if continuity_coeff > 1e-5:
+                    c_loss = gnn_model.compute_continuity_loss(batched_graph, pred_branch, pred_junction, label_coefs, coefs_dict)
                 bc_loss = gnn_model.compute_bc_loss(batched_graph,
                                                     batched_graph.nodes['branch'].data['n_features'],
                                                     batched_graph.nodes['junction'].data['n_features'],
@@ -104,15 +106,11 @@ def evaluate_model(gnn_model, train_dataloader, loss, metric = None,
                 # real = gnn_model.compute_continuity_loss(batched_graph, batched_graph.nodes['inner'].data['n_labels'], label_coefs, coefs_dict)
                 # print(real)
                 loss_v =  loss_v + c_loss * continuity_coeff
-            else:
-                pass
+                c_loss_global = c_loss_global + c_loss
 
             if bc_coeff > 1e-5:
-                loss_v =  loss_v + bc_loss * continuity_coeff
-            else:
-                pass
+                loss_v =  loss_v + bc_loss * bc_coeff
 
-            c_loss_global = c_loss_global + c_loss
             global_loss = global_loss + loss_v.detach().numpy()
 
             if metric != None:
@@ -125,14 +123,16 @@ def evaluate_model(gnn_model, train_dataloader, loss, metric = None,
                loss_v.backward()
                optimizer.step()
             count = count + 1
+            
 
         return {'global_loss': global_loss, 'count': count,
                 'continuity_loss': c_loss_global, 'global_metric': global_metric}
 
+    validation_results = None
     start = time.time()
-    train_results = loop_over(train_dataloader, optimizer)
     if validation_dataloader:
         validation_results = loop_over(validation_dataloader)
+    train_results = loop_over(train_dataloader, optimizer)
     end = time.time()
 
     return train_results, validation_results, end - start
@@ -293,12 +293,14 @@ def launch_training(dataset_json, optimizer_name, params_dict,
         try:
             # we call the method on .module because otherwise the pms file
             # cannot be read serially
-            torch.save(gnn_model.module.state_dict(), folder + '/trained_gnn.pms')
+            torch.save(gnn_model.module.state_dict(), folder + '/initial_gnn.pms')
         except AttributeError:
-            torch.save(gnn_model.state_dict(), folder + '/trained_gnn.pms')
+            torch.save(gnn_model.state_dict(), folder + '/initial_gnn.pms')
 
     now = datetime.now()
     train, validation, test = prepare_dataset(dataset_json)
+    train = np.array(['0092_0001'])
+    validation = np.array(['0092_0001'])
     print('Train set:')
     print(train)
     print('Validation set:')
@@ -350,7 +352,7 @@ def launch_training(dataset_json, optimizer_name, params_dict,
 
     if save_data:
         with open(folder + '/parameters.json', 'w') as outfile:
-            json.dump(parameters, outfile, default=default)
+            json.dump(parameters, outfile, default=default, indent=4)
     return gnn_model, loss, mae, dataset, coefs_dict, folder, parameters
 
 if __name__ == "__main__":
@@ -383,8 +385,8 @@ if __name__ == "__main__":
     train_params = {'learning_rate': 0.008223127794360673,
                     'weight_decay': 0.36984122162067234,
                     'momentum': 0.0,
-                    'batch_size': 100,
-                    'nepochs': 1,
+                    'batch_size': 1,
+                    'nepochs': 100,
                     'continuity_coeff': -3,
                     'bc_coeff': -5,
                     'weight_decay': 1e-5}

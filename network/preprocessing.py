@@ -189,7 +189,7 @@ class DGL_Dataset(DGLDataset):
         self.lightgraphs = []
         self.noise_pressures = []
         self.noise_flowrates = []
-        all_labels = None
+        N = 0
         for igraph in range(len(self.graphs)):
             lightgraph = copy.deepcopy(self.graphs[igraph])
 
@@ -207,28 +207,38 @@ class DGL_Dataset(DGLDataset):
             self.noise_pressures.append(noise_pressure)
             self.noise_flowrates.append(noise_flowrate)
 
+            all_labels = np.array([])
             for itime in range(self.times[igraph].shape[1] - 1):
                 self.prep_item(igraph, itime)
                 curlabels = self.lightgraphs[igraph].nodes['branch'].data['n_labels']
-                if all_labels == None:
+                if all_labels.size == 0:
                     all_labels = curlabels
                 else:
                     all_labels = torch.cat((all_labels, curlabels), axis = 0)
-                
                 curlabels = self.lightgraphs[igraph].nodes['junction'].data['n_labels']
-                if all_labels == None:
-                    all_labels = curlabels
-                else:
-                    all_labels = torch.cat((all_labels, curlabels), axis = 0)
+                all_labels = torch.cat((all_labels, curlabels), axis = 0)
+            all_labels = all_labels.detach().numpy()
+            sumsquared = np.sum(all_labels**2, axis=0)
+            sumx = np.sum(all_labels, axis=0)
+            N = N + all_labels.shape[0]
+            if igraph == 0:
+                minlabels = np.min(all_labels, axis=0)
+                maxlabels = np.max(all_labels, axis=0)
+            else:
+                curmin = np.min(all_labels, axis=0)
+                curmax = np.max(all_labels, axis=0)
+                for i in range(minlabels.size):
+                    minlabels[i] = np.min([minlabels[i], curmin[i]])
+                    maxlabels[i] = np.max([maxlabels[i], curmax[i]])
 
-
-        all_labels = all_labels.detach().numpy()
-        self.label_coefs = {'min': torch.from_numpy(np.min(all_labels, axis=0)),
-                            'max': torch.from_numpy(np.max(all_labels, axis=0)),
-                            'mean': torch.from_numpy(np.mean(all_labels, axis=0)),
-                            'std': torch.from_numpy(np.std(all_labels, axis=0)),
+        self.label_coefs = {'min': torch.from_numpy(minlabels),
+                            'max': torch.from_numpy(maxlabels),
+                            'mean': torch.from_numpy(sumx / N),
+                            'std': torch.tensor(np.sqrt(sumsquared/N - (sumx/N)**2)),
                             'normalization_type': self.label_normalization}
-        
+
+        print(self.label_coefs)
+
         end = time.time()
         elapsed_time = end - start
         print('\tDGLDataset generated in {:0.2f} s'.format(elapsed_time))
@@ -243,7 +253,6 @@ class DGL_Dataset(DGLDataset):
             for index in range(1,self.times[igraph].shape[1]-1):
                 self.noise_pressures[igraph][:,index] = np.random.normal(0, actual_rate, (nnodes)) + self.noise_pressures[igraph][:,index-1]
                 self.noise_flowrates[igraph][:,index] = np.random.normal(0, actual_rate, (nnodes)) + self.noise_flowrates[igraph][:,index-1]
-                
 
     def get_state_dict(self, gindex, tindex):
         pressure_dict = {'branch': self.graphs[gindex].nodes['branch'].data['pressure_' + str(tindex)],
@@ -263,18 +272,18 @@ class DGL_Dataset(DGLDataset):
         mj = self.graphs[gindex].nodes['junction'].data['mask']
         mi = np.array(self.graphs[gindex].nodes['inlet'].data['mask'])
         mo = self.graphs[gindex].nodes['outlet'].data['mask']
-        
+
         pressure_noise_dict = {'branch': torch.from_numpy(np.expand_dims(self.noise_pressures[gindex][mb,tindex],1)),
                                'junction': torch.from_numpy(np.expand_dims(self.noise_pressures[gindex][mj,tindex],1)),
                                'inlet': torch.from_numpy(self.noise_pressures[gindex][mi,tindex]),
                                'outlet': torch.from_numpy(np.expand_dims(self.noise_pressures[gindex][mo,tindex],1))}
-        
+
         flowrate_noise_dict = {'branch': torch.from_numpy(np.expand_dims(self.noise_flowrates[gindex][mb,tindex],1)),
                                'junction': torch.from_numpy(np.expand_dims(self.noise_flowrates[gindex][mj,tindex],1)),
                                'inlet': torch.from_numpy(self.noise_flowrates[gindex][mi,tindex]),
                                'outlet': torch.from_numpy(np.expand_dims(self.noise_flowrates[gindex][mo,tindex],1))}
 
-        noise_dict = {'pressure': pressure_noise_dict, 
+        noise_dict = {'pressure': pressure_noise_dict,
                       'flowrate': flowrate_noise_dict}
 
         set_state(self.lightgraphs[gindex], state_dict, next_state_dict, noise_dict, label_coefs)
@@ -305,12 +314,14 @@ def generate_dataset(model_names, normalized_data_dir, train = False):
                 break
             else:
                 graphs.append(load_graphs(filename)[0][0])
+                if mv == 5:
+                    break
             if not train:
                 break
             mv = mv + 1
     end = time.time()
     elapsed_time = end - start
-    print('Dataset loaded in {:0.2f} s'.format(elapsed_time))
+    print('Dataset loaded in {:0.2f} s'.format(elapsed_time), flush=True)
 
     coefs_dict = json.load(open(normalized_data_dir + '/normalization_coefficients.json'))
     dataset_params = json.load(open(normalized_data_dir + '/dataset_parameters.json'))

@@ -226,6 +226,10 @@ def generate_graphs(model_name, model_params, input_dir, output_dir,
         if exists(input_dir + '/' + model_name_v + '.vtp'):
             versions.append(mv)
 
+    #TODO: delete
+    if 1 not in versions:
+        return True
+
     failures = 0
     max_failures = 100
     n_graph = 0
@@ -233,6 +237,8 @@ def generate_graphs(model_name, model_params, input_dir, output_dir,
         print('Adding graph ' + str(n_graph))
         # pick a random version
         mv = random.choice(versions)
+        #TODO delete
+        mv = 1
         model_name_v = model_name + '.' + str(mv)
         soln = io.read_geo(input_dir + '/' + model_name_v + '.vtp').GetOutput()
         fields, _, p_array = io.get_all_arrays(soln)
@@ -331,9 +337,9 @@ if __name__ == "__main__":
     input_dir = 'vtps'
     output_dir = 'data/'
     params = json.load(open(input_dir + '/dataset_info.json'))
-    params2 = {}
-    params2['0087_1001'] = params['0087_1001']
-    params = params2
+    # params2 = {}
+    # params2['0087_1001'] = params['0087_1001']
+    # params = params2
     timesteps = json.load(open(input_dir + '/timesteps.json'))
     for model in params:
         params[model]['timestep'] = timesteps[model]
