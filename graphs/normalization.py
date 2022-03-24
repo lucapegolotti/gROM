@@ -30,10 +30,12 @@ def get_times(graph):
 
     return times
 
-def get_actual_times(graph, coefs_dict):
+def get_actual_times(graph, coefs_dict, denormalize = True):
     times =np.array(get_times(graph))
     dt = graph.nodes['branch'].data['dt'][0].detach().numpy()
-    dt = invert_normalize_function(dt, 'dt', coefs_dict)
+
+    if denormalize:
+        dt = invert_normalize_function(dt, 'dt', coefs_dict)
 
     times = (times - times[0]) * dt
 

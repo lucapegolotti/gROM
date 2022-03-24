@@ -90,24 +90,53 @@ def set_state(graph, state_dict, next_state_dict = None, noise_dict = None, coef
                                                                        graph.nodes[node_type].data['node_type'], \
                                                                        graph.nodes[node_type].data['tangent'],
                                                                        graph.nodes[node_type].data['dt']), 1).float()
+        # These would be physical bcs but they work worse
+        # elif node_type == 'inlet':
+        #     if noise_dict == None:
+        #         graph.nodes[node_type].data['n_features'] = torch.cat((graph.nodes[node_type].data['flowrate'], \
+        #                                                                graph.nodes[node_type].data['flowrate_next'], \
+        #                                                                graph.nodes[node_type].data['area']), 1).float()
+        #     else:
+        #         graph.nodes[node_type].data['n_features'] = torch.cat((graph.nodes[node_type].data['flowrate'] + noise_dict['flowrate'][node_type], \
+        #                                                                graph.nodes[node_type].data['flowrate_next'], \
+        #                                                                graph.nodes[node_type].data['area']), 1).float()
+        # elif node_type == 'outlet':
+        #     if noise_dict == None:
+        #         graph.nodes[node_type].data['n_features'] = torch.cat((graph.nodes[node_type].data['pressure'], \
+        #                                                                graph.nodes[node_type].data['pressure_next'], \
+        #                                                                graph.nodes[node_type].data['area']), 1).float()
+        #     else:
+        #         graph.nodes[node_type].data['n_features'] = torch.cat((graph.nodes[node_type].data['pressure'] + noise_dict['pressure'][node_type], \
+        #                                                                graph.nodes[node_type].data['pressure_next'], \
+        #                                                                graph.nodes[node_type].data['area']), 1).float()
+
         elif node_type == 'inlet':
             if noise_dict == None:
-                graph.nodes[node_type].data['n_features'] = torch.cat((graph.nodes[node_type].data['flowrate'], \
+                graph.nodes[node_type].data['n_features'] = torch.cat((graph.nodes[node_type].data['pressure'], \
+                                                                       graph.nodes[node_type].data['pressure_next'],
+                                                                       graph.nodes[node_type].data['flowrate'], \
                                                                        graph.nodes[node_type].data['flowrate_next'], \
                                                                        graph.nodes[node_type].data['area']), 1).float()
             else:
-                graph.nodes[node_type].data['n_features'] = torch.cat((graph.nodes[node_type].data['flowrate'] + noise_dict['flowrate'][node_type], \
+                graph.nodes[node_type].data['n_features'] = torch.cat((graph.nodes[node_type].data['pressure'] + noise_dict['pressure'][node_type], \
+                                                                       graph.nodes[node_type].data['pressure_next'],
+                                                                       graph.nodes[node_type].data['flowrate'] + noise_dict['flowrate'][node_type], \
                                                                        graph.nodes[node_type].data['flowrate_next'], \
                                                                        graph.nodes[node_type].data['area']), 1).float()
         elif node_type == 'outlet':
             if noise_dict == None:
                 graph.nodes[node_type].data['n_features'] = torch.cat((graph.nodes[node_type].data['pressure'], \
                                                                        graph.nodes[node_type].data['pressure_next'], \
+                                                                       graph.nodes[node_type].data['flowrate'], \
+                                                                       graph.nodes[node_type].data['flowrate_next'], \
                                                                        graph.nodes[node_type].data['area']), 1).float()
             else:
                 graph.nodes[node_type].data['n_features'] = torch.cat((graph.nodes[node_type].data['pressure'] + noise_dict['pressure'][node_type], \
                                                                        graph.nodes[node_type].data['pressure_next'], \
+                                                                       graph.nodes[node_type].data['flowrate'] + noise_dict['flowrate'][node_type], \
+                                                                       graph.nodes[node_type].data['flowrate_next'], \
                                                                        graph.nodes[node_type].data['area']), 1).float()
+
     def per_edge_type(edge_type):
         if edge_type == 'branch_to_branch' or \
            edge_type == 'junction_to_junction' or \

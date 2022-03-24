@@ -123,7 +123,7 @@ def evaluate_model(gnn_model, train_dataloader, loss, metric = None,
                loss_v.backward()
                optimizer.step()
             count = count + 1
-            
+
 
         return {'global_loss': global_loss, 'count': count,
                 'continuity_loss': c_loss_global, 'global_metric': global_metric}
@@ -293,14 +293,13 @@ def launch_training(dataset_json, optimizer_name, params_dict,
         try:
             # we call the method on .module because otherwise the pms file
             # cannot be read serially
-            torch.save(gnn_model.module.state_dict(), folder + '/initial_gnn.pms')
+            torch.save(gnn_model.module.state_dict(), folder + '/' + filename + '.pms')
         except AttributeError:
-            torch.save(gnn_model.state_dict(), folder + '/initial_gnn.pms')
+            torch.save(gnn_model.state_dict(),  folder + '/' + filename + '.pms')
 
     now = datetime.now()
     train, validation, test = prepare_dataset(dataset_json)
-    train = np.array(['0092_0001'])
-    validation = np.array(['0092_0001'])
+
     print('Train set:')
     print(train)
     print('Validation set:')
@@ -385,7 +384,7 @@ if __name__ == "__main__":
     train_params = {'learning_rate': 0.008223127794360673,
                     'weight_decay': 0.36984122162067234,
                     'momentum': 0.0,
-                    'batch_size': 1,
+                    'batch_size': 100,
                     'nepochs': 100,
                     'continuity_coeff': -3,
                     'bc_coeff': -5,

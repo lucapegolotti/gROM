@@ -53,8 +53,8 @@ class GraphNet(Module):
 
         out_bc_encoder = 8
 
-        self.encoder_inlet_edge = MLP(5, 16, out_bc_encoder, 1, True)
-        self.encoder_outlet_edge = MLP(5, 16, out_bc_encoder, 1, True)
+        self.encoder_inlet_edge = MLP(7, 16, out_bc_encoder, 1, True)
+        self.encoder_outlet_edge = MLP(7, 16, out_bc_encoder, 1, True)
 
         self.encoder_branch_nodes = MLP(7,
                                         params['latent_size_mlp'],
@@ -88,9 +88,6 @@ class GraphNet(Module):
         # we share the same weights between branch -> junction and junction -> branch
         # edges
         self.encoder_j2b_edges = self.encoder_b2j_edges
-
-
-
 
         self.processor_b2b_edges = torch.nn.ModuleList()
         self.processor_j2j_edges = torch.nn.ModuleList()
