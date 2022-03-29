@@ -388,7 +388,7 @@ def rotate_graph(graph, identity = False):
     # we want to the keep the scale close to one otherwise flowrate and pressure
     # don't make sense
     if not identity:
-        scale = round(np.random.normal(1, 0.01) , 10)
+        scale = round(np.random.normal(1, 0.001) , 10)
 
         # random rotation matrix
         R, _ = np.linalg.qr(np.random.rand(3,3))

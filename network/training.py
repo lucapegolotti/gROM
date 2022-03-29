@@ -23,6 +23,8 @@ import random
 import time
 import json
 import pathlib
+from rollout import rollout
+import plot_tools as ptools
 
 # try to use mse + param * torch.abs((input - target)).mean()
 def mse(input, target):
@@ -71,7 +73,7 @@ def evaluate_model(gnn_model, train_dataloader, loss, metric = None,
             train_on_junctions = True
 
             if train_on_junctions:
-                coeff_juncts = 10
+                coeff_juncts = 1
                 pred = torch.cat((pred_branch, pred_junction * coeff_juncts), 0)
                 label = torch.cat((batched_graph.nodes['branch'].data['n_labels'].float(),
                                    batched_graph.nodes['junction'].data['n_labels'].float() * coeff_juncts), 0)
@@ -124,7 +126,6 @@ def evaluate_model(gnn_model, train_dataloader, loss, metric = None,
                loss_v.backward()
                optimizer.step()
             count = count + 1
-
 
         return {'global_loss': global_loss, 'count': count,
                 'continuity_loss': c_loss_global, 'global_metric': global_metric}
@@ -223,6 +224,14 @@ def train_gnn_model(gnn_model, train, validation, optimizer_name, train_params,
     noise_start = nepochs / 10
     ramp_epochs = int(np.floor(nepochs/2))
 
+    history = {}
+    history['train_loss'] = [[],[]]
+    history['train_metric'] = [[],[]]
+    history['train_rollout_error'] = [[],[]]
+    history['validation_loss'] = [[],[]]
+    history['validation_metric'] = [[],[]]
+    history['validation_rollout_error'] = [[],[]]
+
     for epoch in range(nepochs):
         if epoch >= noise_start:
             if epoch >= noise_start + ramp_epochs:
@@ -246,6 +255,15 @@ def train_gnn_model(gnn_model, train, validation, optimizer_name, train_params,
         msg = msg + 'val_mae = {:.2e} '.format(val_results['global_metric']/val_results['count'])
         msg = msg + 'val_con_loss = {:.2e} '.format(val_results['continuity_loss']/val_results['count'])
         msg = msg + 'time = {:.2f} s'.format(elapsed)
+
+        history['train_loss'][0].append(epoch)
+        history['train_loss'][1].append(train_results['global_loss']/train_results['count'])
+        history['train_metric'][0].append(epoch)
+        history['train_metric'][1].append(train_results['global_metric']/train_results['count'])
+        history['validation_loss'][0].append(epoch)
+        history['validation_loss'][1].append(val_results['global_loss']/val_results['count'])
+        history['validation_metric'][0].append(epoch)
+        history['validation_metric'][1].append(val_results['global_metric']/val_results['count'])
 
         print(msg, flush=True)
 
@@ -271,7 +289,7 @@ def train_gnn_model(gnn_model, train, validation, optimizer_name, train_params,
 
     return gnn_model, train_dataloader, train_results['global_loss']/train_results['count'], \
            train_results['global_metric']/train_results['count'], coefs_dict, train_dataset, \
-           dataset_params
+           dataset_params, history
 
 def prepare_dataset(dataset_json):
     dataset = dataset_json['dataset']
@@ -287,9 +305,10 @@ def prepare_dataset(dataset_json):
 
     return train, validation, test
 
-
 def launch_training(dataset_json, optimizer_name, params_dict,
                     train_params, plot_validation = True, checkpoint_fct = None):
+    now = datetime.now()
+    folder = 'models/' + now.strftime("%d.%m.%Y_%H.%M.%S")
     def save_model(filename):
         try:
             # we call the method on .module because otherwise the pms file
@@ -298,7 +317,6 @@ def launch_training(dataset_json, optimizer_name, params_dict,
         except AttributeError:
             torch.save(gnn_model.state_dict(),  folder + '/' + filename)
 
-    now = datetime.now()
     train, validation, test = prepare_dataset(dataset_json)
 
     print('Train set:')
@@ -314,18 +332,18 @@ def launch_training(dataset_json, optimizer_name, params_dict,
         save_data = (dist.get_rank() == 0)
     except RuntimeError:
         pass
-    folder = 'models/' + now.strftime("%d.%m.%Y_%H.%M.%S")
     if save_data:
         pathlib.Path(folder).mkdir(parents=True, exist_ok=True)
         if save_data:
             save_model('initial_gnn.pms')
 
-    gnn_model, train_loader, loss, mae, coefs_dict, dataset, dataset_params = train_gnn_model(gnn_model,
-                                                                              train,
-                                                                              validation,
-                                                                              optimizer_name,
-                                                                              train_params,
-                                                                              checkpoint_fct)
+    gnn_model, train_loader, loss, mae, \
+    coefs_dict, dataset, dataset_params, history = train_gnn_model(gnn_model,
+                                                                   train,
+                                                                   validation,
+                                                                   optimizer_name,
+                                                                   train_params,
+                                                                   checkpoint_fct)
 
     split = {'train': train.tolist(), 'validation': validation.tolist(), 'test': test.tolist()}
 
@@ -341,6 +359,15 @@ def launch_training(dataset_json, optimizer_name, params_dict,
                   'train_parameters': train_params,
                   'dataset_parameters': dataset_params,
                   'normalization_coefficients': coefs}
+
+    if save_data:
+        ptools.plot_history(history['train_loss'],
+                        history['validation_loss'],
+                        'loss', folder)
+
+        ptools.plot_history(history['train_metric'],
+                            history['validation_metric'],
+                            'mae', folder)
 
     def default(obj):
         if isinstance(obj, torch.Tensor):
@@ -386,11 +413,10 @@ if __name__ == "__main__":
                     'weight_decay': 0.36984122162067234,
                     'momentum': 0.0,
                     'batch_size': 100,
-                    'nepochs': 100,
+                    'nepochs': 10,
                     'continuity_coeff': -2,
                     'bc_coeff': -3,
                     'weight_decay': 1e-5}
-
 
     start = time.time()
     launch_training(dataset_json,  'adam', params_dict, train_params,

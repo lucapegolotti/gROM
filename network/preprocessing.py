@@ -341,7 +341,7 @@ def generate_dataset(model_names, normalized_data_dir, train = False):
                 break
             else:
                 graphs.append(load_graphs(filename)[0][0])
-                if mv == 5:
+                if mv == 100:
                     break
             if not train:
                 break

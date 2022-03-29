@@ -480,6 +480,21 @@ def plot_static(graph, pressures_branch_pred, flowrates_branch_pred,
 
     plt.savefig(outdir + '/static_3D.png')
 
+def plot_history(history_train, history_validation, label, folder):
+    fig = plt.figure()
+    ax = plt.axes()
+
+    ax.plot(history_train[0], history_train[1], color = 'red', label='train')
+    ax.plot(history_validation[0], history_validation[1], color = 'blue', label='validation')
+    ax.legend()
+    ax.set_xlim((history_train[0][0],history_train[0][-1]))
+
+    ax.set_xlabel('epoch')
+    ax.set_ylabel(label)
+
+    plt.savefig(folder + '/' + label + '.png')
+
+
 if __name__ == "__main__":
     model_name = '0091_0001'
     print('Create geometry: ' + model_name)
