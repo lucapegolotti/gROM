@@ -68,7 +68,7 @@ class GraphNet(Module):
                                      params['hl_mlp'],
                                      params['normalize'])
 
-        self.encoder_junction_nodes = MLP(params['infeat_nodes'],
+        self.encoder_junction_nodes = MLP(7,
                                           params['latent_size_mlp'],
                                           params['latent_size_gnn'],
                                           params['hl_mlp'],

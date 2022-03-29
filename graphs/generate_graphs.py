@@ -183,7 +183,7 @@ def add_fields(graph, pressure, velocity):
 
     return newgraph
 
-def augment_time(field, model_params, ntimepoints):
+def augment_time(field, model_params, dt_new):
     timestep = model_params['timestep']
 
     times_before = [t for t in field]
@@ -196,7 +196,16 @@ def augment_time(field, model_params, ntimepoints):
     times_scaled = times_scaled - times_scaled[0]
     period = times_scaled[-1]
 
-    times_new = np.linspace(0, period, ntimepoints)
+    # dt_new = 0.002
+    # times_new = np.linspace(0, period, ntimepoints)
+    times_new = [0]
+    t = 0
+    while t < period:
+        t = t + dt_new
+        times_new.append(t)
+
+    times_new = np.array(times_new)
+    ntimepoints = times_new.size
 
     Y = np.zeros((npoints, ntimepoints))
     for ipoint in range(npoints):
@@ -226,7 +235,7 @@ def generate_graphs(model_name, model_params, input_dir, output_dir,
         if exists(input_dir + '/' + model_name_v + '.vtp'):
             versions.append(mv)
 
-    #TODO: delete
+    # delete this
     if 1 not in versions:
         return True
 
@@ -237,7 +246,7 @@ def generate_graphs(model_name, model_params, input_dir, output_dir,
         print('Adding graph ' + str(n_graph))
         # pick a random version
         mv = random.choice(versions)
-        #TODO delete
+        # delete this
         mv = 1
         model_name_v = model_name + '.' + str(mv)
         soln = io.read_geo(input_dir + '/' + model_name_v + '.vtp').GetOutput()
@@ -304,10 +313,10 @@ def generate_graphs(model_name, model_params, input_dir, output_dir,
                                   folder + '/flowrate.mp4')
 
             print('Augmenting timesteps')
-            ntimepoints = random.randint(model_params['min_timepoints'],
-                                         model_params['max_timepoints'])
-            pressure = augment_time(pressure, model_params, ntimepoints)
-            flowrate = augment_time(flowrate, model_params, ntimepoints)
+            dt_new = round(np.random.normal(0.002, 0.0001) , 10)
+
+            pressure = augment_time(pressure, model_params, dt_new)
+            flowrate = augment_time(flowrate, model_params, dt_new)
 
             for t in pressure:
                 if np.min(pressure[t]) < 0:
@@ -336,7 +345,7 @@ def generate_graphs(model_name, model_params, input_dir, output_dir,
 if __name__ == "__main__":
     input_dir = 'vtps'
     output_dir = 'data/'
-    params = json.load(open(input_dir + '/dataset_info.json'))
+    params = json.load(open(input_dir + '/dataset_aortas.json'))
     # params2 = {}
     # params2['0087_1001'] = params['0087_1001']
     # params = params2
@@ -345,7 +354,7 @@ if __name__ == "__main__":
         params[model]['timestep'] = timesteps[model]
 
     failed_models = []
-    n_graphs_per_model = 20
+    n_graphs_per_model = 100
     for model in params:
         print('Processing {}'.format(model))
         success = generate_graphs(model, params[model], input_dir, output_dir,

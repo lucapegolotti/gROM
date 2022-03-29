@@ -17,6 +17,7 @@ import random
 import pathlib
 import json
 import time
+import matplotlib.pyplot as plt
 
 def get_times(graph):
     times = []
@@ -131,12 +132,12 @@ def standardize(field, coeffs):
     except AttributeError:
         ncomponents = 1
     if ncomponents == 1:
-        if coeffs['std'] < 1e-12:
+        if coeffs['std'] < 1e-6:
             return (field - coeffs['mean'])
         else:
             return (field - coeffs['mean']) / coeffs['std']
     for i in range(ncomponents):
-        if coeffs['std'][i] < 1e-12:
+        if coeffs['std'][i] < 1e-6:
             field[:,i] = (field[:,i] - coeffs['mean'][i])
         else:
             field[:,i] = (field[:,i] - coeffs['mean'][i]) / coeffs['std'][i]
@@ -375,6 +376,7 @@ def normalize(graphs, ntype, coefs_dict = None):
         coefs_dict['type'] = ntype
         coefs_dict = compute_statistics(graphs.values(), fields, coefs_dict)
     end = time.time()
+
     elapsed_time = end - start
     print('\tstatistics computed in {:0.2f} s'.format(elapsed_time))
 
@@ -382,45 +384,83 @@ def normalize(graphs, ntype, coefs_dict = None):
 
     return coefs_dict
 
-def rotate_graph(graph):
+def rotate_graph(graph, identity = False):
     # we want to the keep the scale close to one otherwise flowrate and pressure
     # don't make sense
-    minscale = 1
-    maxscale = 1
-    scale = minscale + np.random.rand(1) * (maxscale - minscale)
+    if not identity:
+        scale = round(np.random.normal(1, 0.01) , 10)
 
-    # random rotation matrix
-    R, _ = np.linalg.qr(np.random.rand(3,3))
+        # random rotation matrix
+        R, _ = np.linalg.qr(np.random.rand(3,3))
+    else:
+        scale = 1
+        R = np.eye(3)
 
     def rotate_array(inarray):
-        inarray = (np.matmul(inarray,R) * scale).float()
-    #
-    # def scale_array(inarray):
-    #     inarray = inarray * scale
+        return  (np.matmul(inarray,R) * scale).float()
 
-    rotate_array(graph.edges['branch_to_branch'].data['position'][:,0:3])
-    # scale_array(newgraph.edges['branch_to_branch'].data['position'][:,3])
-    rotate_array(graph.edges['junction_to_junction'].data['position'][:,0:3])
-    # scale_array(newgraph.edges['junction_to_junction'].data['position'][:,3])
-    rotate_array(graph.edges['junction_to_branch'].data['position'][:,0:3])
-    # scale_array(newgraph.edges['junction_to_branch'].data['position'][:,3])
-    rotate_array(graph.edges['branch_to_junction'].data['position'][:,0:3])
-    # scale_array(newgraph.edges['branch_to_junction'].data['position'][:,3])
-    # scale_array(newgraph.edges['in_to_branch'].data['distance'])
-    # scale_array(newgraph.edges['in_to_junction'].data['distance'])
-    # scale_array(newgraph.edges['out_to_branch'].data['distance'])
-    # scale_array(newgraph.edges['out_to_junction'].data['distance'])
+    def scale_array(inarray):
+        return inarray * scale
 
-    rotate_array(graph.nodes['branch'].data['x'])
-    # scale_array(newgraph.nodes['branch'].data['area'])
-    rotate_array(graph.nodes['branch'].data['tangent'])
+    graph.edges['branch_to_branch'].data['position'][:,0:3] = \
+        rotate_array(graph.edges['branch_to_branch'].data['position'][:,0:3])
+    graph.edges['branch_to_branch'].data['position'][:,3] = \
+        scale_array(graph.edges['branch_to_branch'].data['position'][:,3])
+    graph.edges['junction_to_junction'].data['position'][:,0:3] = \
+        rotate_array(graph.edges['junction_to_junction'].data['position'][:,0:3])
+    graph.edges['junction_to_junction'].data['position'][:,3] = \
+        scale_array(graph.edges['junction_to_junction'].data['position'][:,3])
+    graph.edges['junction_to_branch'].data['position'][:,0:3] = \
+        rotate_array(graph.edges['junction_to_branch'].data['position'][:,0:3])
+    graph.edges['junction_to_branch'].data['position'][:,3] = \
+        scale_array(graph.edges['junction_to_branch'].data['position'][:,3])
+    graph.edges['branch_to_junction'].data['position'][:,0:3] = \
+        rotate_array(graph.edges['branch_to_junction'].data['position'][:,0:3])
+    graph.edges['branch_to_junction'].data['position'][:,3] = \
+        scale_array(graph.edges['branch_to_junction'].data['position'][:,3])
+    graph.edges['in_to_branch'].data['distance'] = \
+        scale_array(graph.edges['in_to_branch'].data['distance'])
+    graph.edges['in_to_junction'].data['distance'] = \
+        scale_array(graph.edges['in_to_junction'].data['distance'])
+    graph.edges['out_to_branch'].data['distance'] = \
+        scale_array(graph.edges['out_to_branch'].data['distance'])
+    graph.edges['out_to_junction'].data['distance'] = \
+        scale_array(graph.edges['out_to_junction'].data['distance'])
 
-    rotate_array(graph.nodes['junction'].data['x'])
-    # scale_array(newgraph.nodes['junction'].data['area'])
-    rotate_array(graph.nodes['junction'].data['tangent'])
+    # fig = plt.figure()
+    # ax = plt.axes(projection='3d')
 
-    rotate_array(graph.nodes['inlet'].data['x'])
-    rotate_array(graph.nodes['outlet'].data['x'])
+
+    # ax.scatter(graph.nodes['branch'].data['x'][:,0],
+    #             graph.nodes['branch'].data['x'][:,1],
+    #             graph.nodes['branch'].data['x'][:,2], c='black')
+
+    graph.nodes['branch'].data['x'] = \
+        rotate_array(graph.nodes['branch'].data['x'])
+    # scale_array(graph.nodes['branch'].data['area'])
+    graph.nodes['branch'].data['tangent'] = \
+        rotate_array(graph.nodes['branch'].data['tangent'])
+    # ax.scatter(graph.nodes['branch'].data['x'][:,0],
+    #             graph.nodes['branch'].data['x'][:,1],
+    #             graph.nodes['branch'].data['x'][:,2], c='black')
+
+    # ax.scatter(graph.nodes['junction'].data['x'][:,0],
+    #             graph.nodes['junction'].data['x'][:,1],
+    #             graph.nodes['junction'].data['x'][:,2], c='red')
+    graph.nodes['junction'].data['x'] = \
+        rotate_array(graph.nodes['junction'].data['x'])
+    # scale_array(graph.nodes['junction'].data['area'])
+    graph.nodes['junction'].data['tangent'] = \
+        rotate_array(graph.nodes['junction'].data['tangent'])
+    # ax.scatter(graph.nodes['junction'].data['x'][:,0],
+    #             graph.nodes['junction'].data['x'][:,1],
+    #             graph.nodes['junction'].data['x'][:,2], c='red')
+    # plt.show()
+
+    graph.nodes['inlet'].data['x'] = \
+        rotate_array(graph.nodes['inlet'].data['x'])
+    graph.nodes['outlet'].data['x'] = \
+        rotate_array(graph.nodes['outlet'].data['x'])
 
 def normalize_dataset(data_folder, dataset_params,  output_dir = 'normalized_data/'):
     graphs_names = os.listdir(data_folder)
@@ -476,6 +516,8 @@ def normalize_dataset(data_folder, dataset_params,  output_dir = 'normalized_dat
         # we only rotate the models with model version != 0
         if '.0.' not in name:
             rotate_graph(graphs[name])
+        else:
+            rotate_graph(graphs[name], identity=True)
     end = time.time()
     elapsed_time = end - start
     print('Graphs rotated in {:0.2f} s'.format(elapsed_time))
@@ -495,7 +537,10 @@ def normalize_dataset(data_folder, dataset_params,  output_dir = 'normalized_dat
         if isinstance(obj, torch.Tensor):
             return default(obj.detach().numpy())
         if isinstance(obj, np.ndarray):
-            return obj.tolist()
+            if obj.size == 1:
+                return obj[0]
+            else:
+                return obj.tolist()
         print(obj)
         raise TypeError('Not serializable')
 
@@ -507,7 +552,7 @@ def normalize_dataset(data_folder, dataset_params,  output_dir = 'normalized_dat
 
 if __name__ == "__main__":
     dataset_params = {'normalization': 'standard',
-                      'rate_noise': 1e-5,
+                      'rate_noise': 60,
                       'label_normalization': 'min_max',
                       'augment_data': 0,
                       'add_noise': False,

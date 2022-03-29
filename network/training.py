@@ -71,9 +71,10 @@ def evaluate_model(gnn_model, train_dataloader, loss, metric = None,
             train_on_junctions = True
 
             if train_on_junctions:
-                pred = torch.cat((pred_branch, pred_junction), 0)
+                coeff_juncts = 10
+                pred = torch.cat((pred_branch, pred_junction * coeff_juncts), 0)
                 label = torch.cat((batched_graph.nodes['branch'].data['n_labels'].float(),
-                                   batched_graph.nodes['junction'].data['n_labels'].float()), 0)
+                                   batched_graph.nodes['junction'].data['n_labels'].float() * coeff_juncts), 0)
             else:
                 pred = pred_branch
                 label = batched_graph.nodes['branch'].data['n_labels'].float()
@@ -293,9 +294,9 @@ def launch_training(dataset_json, optimizer_name, params_dict,
         try:
             # we call the method on .module because otherwise the pms file
             # cannot be read serially
-            torch.save(gnn_model.module.state_dict(), folder + '/' + filename + '.pms')
+            torch.save(gnn_model.module.state_dict(), folder + '/' + filename)
         except AttributeError:
-            torch.save(gnn_model.state_dict(),  folder + '/' + filename + '.pms')
+            torch.save(gnn_model.state_dict(),  folder + '/' + filename)
 
     now = datetime.now()
     train, validation, test = prepare_dataset(dataset_json)
@@ -317,7 +318,7 @@ def launch_training(dataset_json, optimizer_name, params_dict,
     if save_data:
         pathlib.Path(folder).mkdir(parents=True, exist_ok=True)
         if save_data:
-            save_model(folder + '/initial_gnn.pms')
+            save_model('initial_gnn.pms')
 
     gnn_model, train_loader, loss, mae, coefs_dict, dataset, dataset_params = train_gnn_model(gnn_model,
                                                                               train,
@@ -329,7 +330,7 @@ def launch_training(dataset_json, optimizer_name, params_dict,
     split = {'train': train.tolist(), 'validation': validation.tolist(), 'test': test.tolist()}
 
     if save_data:
-        save_model(folder + '/trained_gnn.pms')
+        save_model('trained_gnn.pms')
 
     dataset_params['split'] = split
 
@@ -374,10 +375,10 @@ if __name__ == "__main__":
     #                'average_flowrate_training': 0}
     params_dict = {'infeat_nodes': 27,
                    'infeat_edges': 4,
-                   'latent_size_gnn': 8,
-                   'latent_size_mlp': 32,
+                   'latent_size_gnn': 16,
+                   'latent_size_mlp': 64,
                    'out_size': 2,
-                   'process_iterations': 2,
+                   'process_iterations': 8,
                    'hl_mlp': 1,
                    'normalize': 1,
                    'average_flowrate_training': 0}
@@ -386,8 +387,8 @@ if __name__ == "__main__":
                     'momentum': 0.0,
                     'batch_size': 100,
                     'nepochs': 100,
-                    'continuity_coeff': -3,
-                    'bc_coeff': -5,
+                    'continuity_coeff': -2,
+                    'bc_coeff': -3,
                     'weight_decay': 1e-5}
 
 
