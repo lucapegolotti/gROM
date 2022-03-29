@@ -82,7 +82,7 @@ def get_color_nodes(graph, cmap = cm.get_cmap("plasma")):
 
     return color_node
 
-def test_rollout(model, params, dataset, index_graph, split, out_folder):
+def rollout(model, params, dataset, index_graph, split):
     model.eval()
     graph = dataset.lightgraphs[index_graph]
     model_name = params['dataset_parameters']['split'][split][index_graph]
@@ -271,45 +271,70 @@ def test_rollout(model, params, dataset, index_graph, split, out_folder):
     err_p = np.sqrt(err_p / norm_p)
     err_q = np.sqrt(err_q / norm_q)
 
-    print('Error pressure branches = {:.5e}'.format(err_p_branch))
-    print('Error flowrate branches = {:.5e}'.format(err_q_branch))
-    print('Global error branches = {:.5e}'.format(np.sqrt(err_p_branch**2 + err_q_branch**2)))
-    print('Error pressure junctions = {:.5e}'.format(err_p_junction))
-    print('Error flowrate junctions = {:.5e}'.format(err_q_junction))
-    print('Global error junctions = {:.5e}'.format(np.sqrt(err_p_junction**2 + err_q_junction**2)))
-    print('Error pressure = {:.5e}'.format(err_p))
-    print('Error flowrate = {:.5e}'.format(err_q))
-    print('Global error = {:.5e}'.format(np.sqrt(err_p**2 + err_q**2)))
-    print('Relative flowrate loss = {:.5e}'.format(c_loss_total / total_flowrate))
+    errors = {'p_branch': err_p_branch,
+              'q_branch': err_q_branch,
+              'p_junction': err_p_junction,
+              'q_junction': err_q_junction,
+              'p': err_p,
+              'q': err_q,
+              'continuity': c_loss_total / total_flowrate}
 
-    save_plots = True
-    if save_plots:
-        p_bounds = compute_min_max_list(pressures_branch_real + \
-                                        pressures_junction_real, 'pressure', coefs_dict)
-        q_bounds = compute_min_max_list(flowrates_branch_real + \
-                                        flowrates_junction_real, 'flowrate', coefs_dict)
+    solutions = {'p_branch_real': pressures_branch_real,
+                 'p_junction_real': pressures_junction_real,
+                 'q_branch_real': flowrates_branch_real,
+                 'q_junction_real': flowrates_junction_real,
+                 'p_branch_pred': pressures_branch_pred,
+                 'p_junction_pred': pressures_junction_pred,
+                 'q_branch_pred': flowrates_branch_pred,
+                 'q_junction_pred': flowrates_junction_pred}
 
-        bounds = {'pressure': p_bounds, 'flowrate': q_bounds}
+    return errors, solutions, graph, true_graph
 
-        ptools.plot_static(graph, pressures_branch_pred, flowrates_branch_pred,
-                           pressures_branch_real, flowrates_branch_real,
-                           nrmz.get_actual_times(true_graph, coefs_dict),
-                           coefs_dict, npoints=3, outdir=out_folder)
+def print_rollout_errors(errors):
+    print('Error pressure branches = {:.5e}'.format(errors['p_branch']))
+    print('Error flowrate branches = {:.5e}'.format(errors['q_branch']))
+    print('Global error branches = {:.5e}'.format(np.sqrt(errors['p_branch']**2 + errors['q_branch']**2)))
+    print('Error pressure junctions = {:.5e}'.format(errors['p_junction']))
+    print('Error flowrate junctions = {:.5e}'.format(errors['p_junction']))
+    print('Global error junctions = {:.5e}'.format(np.sqrt(errors['p_junction']**2 + errors['p_junction']**2)))
+    print('Error pressure = {:.5e}'.format(errors['p']))
+    print('Error flowrate = {:.5e}'.format(errors['q']))
+    print('Global error = {:.5e}'.format(np.sqrt(errors['p']**2 + errors['q']**2)))
+    print('Relative flowrate loss = {:.5e}'.format(errors['continuity']))
 
-        color_nodes = get_color_nodes(graph)
+def plot_rollout(solutions, coefs_dict, graph, true_graph, out_folder):
+    pressures_branch_real = solutions['p_branch_real']
+    pressures_junction_real = solutions['p_junction_real']
+    flowrates_branch_real = solutions['q_branch_real']
+    flowrates_junction_real = solutions['q_junction_real']
+    pressures_branch_pred = solutions['p_branch_pred']
+    pressures_junction_pred = solutions['p_junction_pred']
+    flowrates_branch_pred = solutions['q_branch_pred']
+    flowrates_junction_pred = solutions['q_junction_pred']
 
-        ptools.plot_linear(pressures_branch_pred, flowrates_branch_pred,
-                           pressures_junction_pred, flowrates_junction_pred,
-                           pressures_branch_real, flowrates_branch_real,
-                           pressures_junction_real, flowrates_junction_real,
-                           color_nodes,
-                           nrmz.get_actual_times(true_graph, coefs_dict),
-                           coefs_dict, bounds, out_folder + '/linear.mp4', time = 5)
+    p_bounds = compute_min_max_list(pressures_branch_real + \
+                                    pressures_junction_real, 'pressure', coefs_dict)
+    q_bounds = compute_min_max_list(flowrates_branch_real + \
+                                    flowrates_junction_real, 'flowrate', coefs_dict)
 
-        ptools.plot_node_types(graph, color_nodes, out_folder + '/node_types.mp4', time = 5)
+    bounds = {'pressure': p_bounds, 'flowrate': q_bounds}
 
-    return err_p_branch, err_q_branch, err_p_junction, err_q_junction, \
-           err_p, err_q, c_loss_total / total_flowrate
+    ptools.plot_static(graph, pressures_branch_pred, flowrates_branch_pred,
+                       pressures_branch_real, flowrates_branch_real,
+                       nrmz.get_actual_times(true_graph, coefs_dict),
+                       coefs_dict, npoints=3, outdir=out_folder)
+
+    color_nodes = get_color_nodes(graph)
+
+    ptools.plot_linear(pressures_branch_pred, flowrates_branch_pred,
+                       pressures_junction_pred, flowrates_junction_pred,
+                       pressures_branch_real, flowrates_branch_real,
+                       pressures_junction_real, flowrates_junction_real,
+                       color_nodes,
+                       nrmz.get_actual_times(true_graph, coefs_dict),
+                       coefs_dict, bounds, out_folder + '/linear.mp4', time = 5)
+
+    ptools.plot_node_types(graph, color_nodes, out_folder + '/node_types.mp4', time = 5)
 
 def evaluate_all_models(dataset, split_name, gnn_model, params):
     num_examples = len(params['dataset_parameters']['split'][split_name])
@@ -330,18 +355,22 @@ def evaluate_all_models(dataset, split_name, gnn_model, params):
         model_name = params['dataset_parameters']['split'][split_name][i]
         print('model name = ' + model_name)
         pathlib.Path('results_' + split_name + '/' + model_name).mkdir(parents=True, exist_ok=True)
-        err_p_branch, err_q_branch, err_p_junction, \
-        err_q_junction, err_p, err_q, cont = test_rollout(gnn_model, params,
-                                                   dataset, index_graph = i,
-                                                   split = split_name,
-                                                   out_folder = 'results_' + split_name + '/' + model_name)
-        tot_err_p_branch = tot_err_p_branch + err_p_branch
-        tot_err_q_branch = tot_err_q_branch + err_q_branch
-        tot_err_p_junction = tot_err_p_junction + err_p_junction
-        tot_err_q_junction = tot_err_q_junction + err_q_junction
-        tot_err_p = tot_err_p + err_p
-        tot_err_q = tot_err_q + err_q
-        tot_continuity = tot_continuity + cont
+        errors, solutions, graph, true_graph = rollout(gnn_model, params,
+                                    dataset, index_graph = i,
+                                    split = split_name)
+        print_rollout_errors(errors)
+        plot_rollout(solutions,
+                     params['normalization_coefficients']['features'],
+                     graph, true_graph,
+                     out_folder = 'results_' + split_name + '/' + model_name)
+
+        tot_err_p_branch = tot_err_p_branch + errors['p_branch']
+        tot_err_q_branch = tot_err_q_branch + errors['q_branch']
+        tot_err_p_junction = tot_err_p_junction + errors['p_junction']
+        tot_err_q_junction = tot_err_q_junction + errors['q_junction']
+        tot_err_p = tot_err_p + errors['p']
+        tot_err_q = tot_err_q + errors['q']
+        tot_continuity = tot_continuity + errors['continuity']
 
     print('----------------------------')
     print('Global statistics')
@@ -383,7 +412,7 @@ if __name__ == "__main__":
 
     dataset, _ = pp.generate_dataset(params['dataset_parameters']['split']['train'], \
                                      "../graphs/normalized_data")
-    check_loss(gnn_model, dataset, training.mse, params)
+    # check_loss(gnn_model, dataset, training.mse, params)
     evaluate_all_models(dataset, 'train', gnn_model, params)
 
     dataset, _ = pp.generate_dataset(params['dataset_parameters']['split']['validation'], \
