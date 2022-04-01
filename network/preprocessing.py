@@ -20,6 +20,8 @@ from os.path import exists
 import json
 import time
 import normalization as nrmz
+import pickle
+import pathlib
 
 def set_state(graph, state_dict, next_state_dict = None, noise_dict = None, coefs_label = None):
     def per_node_type(node_type):
@@ -71,23 +73,20 @@ def set_state(graph, state_dict, next_state_dict = None, noise_dict = None, coef
                                                                        graph.nodes[node_type].data['flowrate'] + \
                                                                        noise_dict['flowrate'][node_type], \
                                                                        graph.nodes[node_type].data['area'], \
-                                                                       graph.nodes[node_type].data['tangent'],
-                                                                       graph.nodes[node_type].data['dt']), 1).float()
+                                                                       graph.nodes[node_type].data['tangent']), 1).float()
         elif node_type == 'junction':
             if noise_dict == None:
                 graph.nodes[node_type].data['n_features'] = torch.cat((graph.nodes[node_type].data['pressure'], \
                                                                        graph.nodes[node_type].data['flowrate'], \
                                                                        graph.nodes[node_type].data['area'], \
-                                                                       graph.nodes[node_type].data['tangent'],
-                                                                       graph.nodes[node_type].data['dt']), 1).float()
+                                                                       graph.nodes[node_type].data['tangent']), 1).float()
             else:
                 graph.nodes[node_type].data['n_features'] = torch.cat((graph.nodes[node_type].data['pressure'] + \
                                                                        noise_dict['pressure'][node_type], \
                                                                        graph.nodes[node_type].data['flowrate'] + \
                                                                        noise_dict['flowrate'][node_type], \
                                                                        graph.nodes[node_type].data['area'], \
-                                                                       graph.nodes[node_type].data['tangent'],
-                                                                       graph.nodes[node_type].data['dt']), 1).float()
+                                                                       graph.nodes[node_type].data['tangent']), 1).float()
         # These would be physical bcs but they work worse
         # elif node_type == 'inlet':
         #     if noise_dict == None:
@@ -140,7 +139,8 @@ def set_state(graph, state_dict, next_state_dict = None, noise_dict = None, coef
            edge_type == 'junction_to_junction' or \
            edge_type == 'branch_to_junction' or \
            edge_type == 'junction_to_branch':
-            graph.edges[edge_type].data['e_features'] = graph.edges[edge_type].data['position'].float()
+            graph.edges[edge_type].data['e_features'] = torch.cat((graph.edges[edge_type].data['rel_position'], \
+                                                                   graph.edges[edge_type].data['rel_position_norm']), 1)
         else:
             graph.edges[edge_type].data['e_features'] = torch.cat((graph.edges[edge_type].data['distance'][:,None],
                                                                    graph.edges[edge_type].data['physical_same'][:,None]), 1).float()
@@ -166,9 +166,10 @@ def set_bcs(graph, state_dict):
     per_node_type('outlet')
 
 class DGL_Dataset(DGLDataset):
-    def __init__(self, graphs = None, label_normalization = 'none', coefs_dict = None):
+    def __init__(self, graphs = None, dataset_params = None, coefs_dict = None):
         self.graphs = graphs
-        self.label_normalization = label_normalization
+        self.dataset_params = dataset_params
+        self.label_normalization = dataset_params['label_normalization']
         self.coefs_dict = coefs_dict
         self.set_times()
         super().__init__(name='dgl_dataset')
@@ -264,8 +265,6 @@ class DGL_Dataset(DGLDataset):
                             'std': torch.tensor(np.sqrt(sumsquared/N - (sumx/N)**2)),
                             'normalization_type': self.label_normalization}
 
-        print(self.label_coefs)
-
         end = time.time()
         elapsed_time = end - start
         print('\tDGLDataset generated in {:0.2f} s'.format(elapsed_time))
@@ -313,7 +312,8 @@ class DGL_Dataset(DGLDataset):
         noise_dict = {'pressure': pressure_noise_dict,
                       'flowrate': flowrate_noise_dict}
 
-        set_state(self.lightgraphs[gindex], state_dict, next_state_dict, noise_dict, label_coefs)
+        set_state(self.lightgraphs[gindex], state_dict,
+                  next_state_dict, noise_dict, label_coefs)
 
     def __getitem__(self, i):
         try:
@@ -330,7 +330,7 @@ class DGL_Dataset(DGLDataset):
             sum = sum + self.times[itime].shape[1] - 1
         return sum
 
-def generate_dataset(model_names, normalized_data_dir, train = False):
+def generate_dataset(model_names, normalized_data_dir, split, train = False):
     graphs = []
     start = time.time()
     for model in model_names:
@@ -352,6 +352,58 @@ def generate_dataset(model_names, normalized_data_dir, train = False):
 
     coefs_dict = json.load(open(normalized_data_dir + '/normalization_coefficients.json'))
     dataset_params = json.load(open(normalized_data_dir + '/dataset_parameters.json'))
+    dataset_params['split'] = split
 
-    return DGL_Dataset(graphs, dataset_params['label_normalization'], coefs_dict), \
-           dataset_params
+    return DGL_Dataset(graphs, dataset_params, coefs_dict)
+
+def prepare_dataset(dataset_json, nsets):
+    def chunks(lst, n):
+        n = int(np.floor(len(lst)/nsets))
+        for i in range(0, len(lst), n):
+            yield lst[i:i + n]
+
+    dataset = dataset_json['dataset']
+    if len(dataset) == 1:
+        datasets = [{'train': [dataset[0]],
+                     'test': [dataset[0]]}]
+        return datasets
+
+    random.seed(10)
+    random.shuffle(dataset)
+
+    sets = list(chunks(dataset, nsets))
+
+    datasets = []
+
+    for i in range(nsets):
+        newdata = {'test': sets[i]}
+        train_s = []
+        for j in range(nsets):
+            if j != i:
+                train_s = train_s + sets[j]
+        newdata['train'] = train_s
+        datasets.append(newdata)
+
+    return datasets
+
+if __name__ == "__main__":
+    dataset_dir = 'datasets/'
+    dataset_json = json.load(open('../graphs/normalized_data/dataset_list.json'))
+
+    nsets = 10
+    datasets_models = prepare_dataset(dataset_json, nsets = 10)
+
+    pathlib.Path(dataset_dir).mkdir(parents=True, exist_ok=True)
+
+    for i in range(1):
+        curfolder = dataset_dir + 'd' + str(i)
+        pathlib.Path(curfolder).mkdir(parents=True, exist_ok=True)
+        train_dataset = generate_dataset(datasets_models[i]['train'],
+                                         '../graphs/normalized_data',
+                                         datasets_models[i],
+                                         train = True)
+        pickle.dump(train_dataset, open(curfolder + '/train.dts', 'wb'))
+        test_dataset = generate_dataset(datasets_models[i]['test'],
+                                        '../graphs/normalized_data',
+                                        datasets_models[i])
+        pickle.dump(test_dataset, open(curfolder + '/test.dts', 'wb'))

@@ -203,12 +203,12 @@ if __name__ == "__main__":
     gnn_model.load_state_dict(torch.load(path + '/trained_gnn.pms'))
     gnn_model.eval()
 
-    dataset, _ = pp.generate_dataset(params['dataset_parameters']['split']['train'], \
-                                     "../graphs/normalized_data")
+    dataset = pp.generate_dataset(params['dataset_parameters']['split']['train'], \
+                                     "../graphs/normalized_data", 'train')
     # check_loss(gnn_model, dataset, training.mse, params)
     evaluate_all_models(dataset, 'train', gnn_model, params)
 
-    dataset, _ = pp.generate_dataset(params['dataset_parameters']['split']['validation'], \
-                                     "../graphs/normalized_data")
+    dataset = pp.generate_dataset(params['dataset_parameters']['split']['validation'], \
+                                     "../graphs/normalized_data", 'validation')
 
     evaluate_all_models(dataset, 'validation', gnn_model, params)

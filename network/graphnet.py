@@ -56,7 +56,7 @@ class GraphNet(Module):
         self.encoder_inlet_edge = MLP(7, 16, out_bc_encoder, 1, True)
         self.encoder_outlet_edge = MLP(7, 16, out_bc_encoder, 1, True)
 
-        self.encoder_branch_nodes = MLP(7,
+        self.encoder_branch_nodes = MLP(6,
                                         params['latent_size_mlp'],
                                         params['latent_size_gnn'],
                                         params['hl_mlp'],
@@ -68,7 +68,7 @@ class GraphNet(Module):
                                      params['hl_mlp'],
                                      params['normalize'])
 
-        self.encoder_junction_nodes = MLP(7,
+        self.encoder_junction_nodes = MLP(6,
                                           params['latent_size_mlp'],
                                           params['latent_size_gnn'],
                                           params['hl_mlp'],
@@ -218,7 +218,6 @@ class GraphNet(Module):
         global_pred[g.nodes['branch'].data['mask'],:] = pred_branch
         global_pred[g.nodes['junction'].data['mask'],:] = pred_junction
 
-
         # we have to bring the flowrate into the original units to compute
         # mass loss
         if label_coefs['normalization_type'] == 'min_max':
@@ -257,7 +256,6 @@ class GraphNet(Module):
         except dgl._ffi.base.DGLError:
             pass
 
-
         try:
             mask = g.nodes['outlet'].data['mask']
             g.nodes['outlet'].data['pred_q'] = global_pred[mask]
@@ -295,7 +293,6 @@ class GraphNet(Module):
         elif label_coefs['normalization_type'] == 'standard':
             pred_p = label_coefs['mean'][0] + pred_p * label_coefs['std'][0]
             pred_q = label_coefs['mean'][1] + pred_q * label_coefs['std'][1]
-
 
         pred_p_branch = pred_p + branch_features[:,0]
         pred_q_branch = pred_q + branch_features[:,1]
@@ -339,7 +336,6 @@ class GraphNet(Module):
         loss_outlets = ((pred_outlets - outlet_features[:,columns]) ** 2).mean()
 
         return (loss_inlet * n_inlet + loss_outlets * n_outlets) / (n_inlet + n_outlets)
-
 
     def compute_flowrate_correction(self, edges):
         f1 = edges.src['average_q']

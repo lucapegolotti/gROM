@@ -11,6 +11,8 @@ import torch
 import torch.distributed as dist
 import preprocessing as pp
 from graphnet import GraphNet
+from dgl.data import DGLDataset
+from preprocessing import DGL_Dataset
 from dgl.dataloading import GraphDataLoader
 from torch.utils.data.sampler import SubsetRandomSampler
 from torch.utils.data.distributed import DistributedSampler
@@ -25,6 +27,7 @@ import json
 import pathlib
 from rollout import rollout
 import plot_tools as ptools
+import pickle
 
 # try to use mse + param * torch.abs((input - target)).mean()
 def mse(input, target):
@@ -73,10 +76,9 @@ def evaluate_model(gnn_model, train_dataloader, loss, metric = None,
             train_on_junctions = True
 
             if train_on_junctions:
-                coeff_juncts = 1
-                pred = torch.cat((pred_branch, pred_junction * coeff_juncts), 0)
+                pred = torch.cat((pred_branch, pred_junction), 0)
                 label = torch.cat((batched_graph.nodes['branch'].data['n_labels'].float(),
-                                   batched_graph.nodes['junction'].data['n_labels'].float() * coeff_juncts), 0)
+                                   batched_graph.nodes['junction'].data['n_labels'].float()), 0)
             else:
                 pred = pred_branch
                 label = batched_graph.nodes['branch'].data['n_labels'].float()
@@ -139,14 +141,15 @@ def evaluate_model(gnn_model, train_dataloader, loss, metric = None,
 
     return train_results, validation_results, end - start
 
-def train_gnn_model(gnn_model, train, validation, optimizer_name, train_params,
+def train_gnn_model(gnn_model, optimizer_name, train_params,
                     checkpoint_fct = None):
-    train_dataset, dataset_params = pp.generate_dataset(train, '../graphs/normalized_data',
-                                        train = True)
-    coefs_dict = train_dataset.coefs_dict
-    print('Dataset contains {:.0f} graphs'.format(len(train_dataset)))
 
-    validation_dataset, _ = pp.generate_dataset(validation, '../graphs/normalized_data')
+    train_dataset = pickle.load(open('datasets/d0/train.dts', 'rb'))
+    coefs_dict = train_dataset.coefs_dict
+    dataset_params = train_dataset.dataset_params
+    print('Dataset contains {:.0f} graphs'.format(len(train_dataset)), flush=True)
+
+    validation_dataset = pickle.load(open('datasets/d0/test.dts', 'rb'))
 
     if dataset_params['label_normalization'] == 'min_max':
         def weighted_mae(input, target):
@@ -271,39 +274,25 @@ def train_gnn_model(gnn_model, train, validation, optimizer_name, train_params,
             if epoch in chckp_epochs:
                 checkpoint_fct(global_loss/count)
 
-    # compute final loss
-    train_results, val_results, elapsed = evaluate_model(gnn_model, train_dataloader,
-                                                         mse, weighted_mae,
-                                                         validation_dataloader = validation_dataloader,
-                                                         continuity_coeff = 10**train_params['continuity_coeff'])
-    msg = 'end\t'
-    msg = msg + 'train_loss = {:.2e} '.format(train_results['global_loss']/train_results['count'])
-    msg = msg + 'train_mae = {:.2e} '.format(train_results['global_metric']/train_results['count'])
-    msg = msg + 'train_con_loss = {:.2e} '.format(train_results['continuity_loss']/train_results['count'])
-    msg = msg + 'val_loss = {:.2e} '.format(val_results['global_loss']/val_results['count'])
-    msg = msg + 'val_mae = {:.2e} '.format(val_results['global_metric']/val_results['count'])
-    msg = msg + 'val_con_loss = {:.2e} '.format(val_results['continuity_loss']/val_results['count'])
-    msg = msg + 'time = {:.2f} s'.format(elapsed)
+    # # compute final loss
+    # train_results, val_results, elapsed = evaluate_model(gnn_model, train_dataloader,
+    #                                                      mse, weighted_mae,
+    #                                                      validation_dataloader = validation_dataloader,
+    #                                                      continuity_coeff = 10**train_params['continuity_coeff'])
+    # msg = 'end\t'
+    # msg = msg + 'train_loss = {:.2e} '.format(train_results['global_loss']/train_results['count'])
+    # msg = msg + 'train_mae = {:.2e} '.format(train_results['global_metric']/train_results['count'])
+    # msg = msg + 'train_con_loss = {:.2e} '.format(train_results['continuity_loss']/train_results['count'])
+    # msg = msg + 'val_loss = {:.2e} '.format(val_results['global_loss']/val_results['count'])
+    # msg = msg + 'val_mae = {:.2e} '.format(val_results['global_metric']/val_results['count'])
+    # msg = msg + 'val_con_loss = {:.2e} '.format(val_results['continuity_loss']/val_results['count'])
+    # msg = msg + 'time = {:.2f} s'.format(elapsed)
 
     print(msg, flush=True)
 
     return gnn_model, train_dataloader, train_results['global_loss']/train_results['count'], \
            train_results['global_metric']/train_results['count'], coefs_dict, train_dataset, \
            dataset_params, history
-
-def prepare_dataset(dataset_json):
-    dataset = dataset_json['dataset']
-    random.seed(10)
-    random.shuffle(dataset)
-    ndata = len(dataset)
-
-    train_perc = dataset_json['training']
-    valid_perc = dataset_json['validation']
-
-    train, validation, test = np.split(dataset, [int(ndata*train_perc), \
-                                                 int(ndata*(valid_perc + train_perc))])
-
-    return train, validation, test
 
 def launch_training(dataset_json, optimizer_name, params_dict,
                     train_params, plot_validation = True, checkpoint_fct = None):
@@ -317,12 +306,6 @@ def launch_training(dataset_json, optimizer_name, params_dict,
         except AttributeError:
             torch.save(gnn_model.state_dict(),  folder + '/' + filename)
 
-    train, validation, test = prepare_dataset(dataset_json)
-
-    print('Train set:')
-    print(train)
-    print('Validation set:')
-    print(validation)
     gnn_model = generate_gnn_model(params_dict)
     save_data = True
     # check if MPI is supported
@@ -339,18 +322,12 @@ def launch_training(dataset_json, optimizer_name, params_dict,
 
     gnn_model, train_loader, loss, mae, \
     coefs_dict, dataset, dataset_params, history = train_gnn_model(gnn_model,
-                                                                   train,
-                                                                   validation,
                                                                    optimizer_name,
                                                                    train_params,
                                                                    checkpoint_fct)
 
-    split = {'train': train.tolist(), 'validation': validation.tolist(), 'test': test.tolist()}
-
     if save_data:
         save_model('trained_gnn.pms')
-
-    dataset_params['split'] = split
 
     coefs = {'features': coefs_dict,
              'labels': dataset.label_coefs}
@@ -402,21 +379,20 @@ if __name__ == "__main__":
     #                'average_flowrate_training': 0}
     params_dict = {'infeat_nodes': 27,
                    'infeat_edges': 4,
-                   'latent_size_gnn': 16,
-                   'latent_size_mlp': 64,
+                   'latent_size_gnn': 8,
+                   'latent_size_mlp': 32,
                    'out_size': 2,
-                   'process_iterations': 8,
+                   'process_iterations': 3,
                    'hl_mlp': 1,
                    'normalize': 1,
                    'average_flowrate_training': 0}
-    train_params = {'learning_rate': 0.008223127794360673,
-                    'weight_decay': 0.36984122162067234,
+    train_params = {'learning_rate': 0.0008,
+                    'weight_decay': 0.6,
                     'momentum': 0.0,
-                    'batch_size': 100,
-                    'nepochs': 10,
-                    'continuity_coeff': -2,
-                    'bc_coeff': -3,
-                    'weight_decay': 1e-5}
+                    'batch_size': 1,
+                    'nepochs': 400,
+                    'continuity_coeff': -5,
+                    'bc_coeff': -5}
 
     start = time.time()
     launch_training(dataset_json,  'adam', params_dict, train_params,
