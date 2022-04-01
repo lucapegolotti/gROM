@@ -275,9 +275,12 @@ class DGL_Dataset(DGLDataset):
             dt = nrmz.invert_normalize_function(dt, 'dt', self.coefs_dict)
             actual_rate = rate * dt
             nnodes = self.noise_pressures[igraph].shape[0]
-            for index in range(1,self.times[igraph].shape[1]-1):
-                self.noise_pressures[igraph][:,index] = np.random.normal(0, actual_rate, (nnodes)) + self.noise_pressures[igraph][:,index-1]
-                self.noise_flowrates[igraph][:,index] = np.random.normal(0, actual_rate, (nnodes)) + self.noise_flowrates[igraph][:,index-1]
+            self.noise_pressures[igraph] = np.random.normal(0, actual_rate, (nnodes, self.times[igraph].shape[1]))
+            self.noise_flowrates[igraph] = np.random.normal(0, actual_rate, (nnodes, self.times[igraph].shape[1]))
+            # this would be brownian noise
+            # for index in range(1,self.times[igraph].shape[1]-1):
+            #     self.noise_pressures[igraph][:,index] = np.random.normal(0, actual_rate, (nnodes)) + self.noise_pressures[igraph][:,index-1]
+            #     self.noise_flowrates[igraph][:,index] = np.random.normal(0, actual_rate, (nnodes)) + self.noise_flowrates[igraph][:,index-1]
 
     def get_state_dict(self, gindex, tindex):
         pressure_dict = {'branch': self.graphs[gindex].nodes['branch'].data['pressure_' + str(tindex)],

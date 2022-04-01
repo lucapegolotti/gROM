@@ -235,7 +235,7 @@ def train_gnn_model(gnn_model, optimizer_name, train_params,
     history['validation_metric'] = [[],[]]
     history['validation_rollout_error'] = [[],[]]
 
-    dataset_params['rate_noise'] = 60
+    dataset_params['rate_noise'] = 600
 
     for epoch in range(nepochs):
         train_dataset.sample_noise(dataset_params['rate_noise'])
@@ -392,7 +392,7 @@ if __name__ == "__main__":
                     'momentum': 0.0,
                     'batch_size': 100,
                     'lr_decay': 0.1,
-                    'nepochs': 400,
+                    'nepochs': 500,
                     'continuity_coeff': -3,
                     'bc_coeff': -5,
                     'weight_decay': 1e-5}
