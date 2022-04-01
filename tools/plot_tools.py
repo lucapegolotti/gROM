@@ -491,6 +491,7 @@ def plot_history(history_train, history_validation, label, folder):
 
     ax.set_xlabel('epoch')
     ax.set_ylabel(label)
+    ax.set_yscale('log')
 
     plt.savefig(folder + '/' + label + '.png')
 
