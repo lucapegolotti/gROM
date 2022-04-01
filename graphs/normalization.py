@@ -368,7 +368,7 @@ def normalize_graphs(graphs, fields, coefs_dict):
             standard_normalization(graph, fields, coefs_dict)
 
 def normalize(graphs, ntype, coefs_dict = None):
-    fields = {'pressure', 'flowrate', 'area', 'position', 'distance', 'dt'}
+    fields = {'pressure', 'flowrate', 'area', 'rel_position_norm', 'distance', 'dt'}
 
     start = time.time()
     if coefs_dict == None:
@@ -402,22 +402,22 @@ def rotate_graph(graph, identity = False):
     def scale_array(inarray):
         return inarray * scale
 
-    graph.edges['branch_to_branch'].data['position'][:,0:3] = \
-        rotate_array(graph.edges['branch_to_branch'].data['position'][:,0:3])
-    graph.edges['branch_to_branch'].data['position'][:,3] = \
-        scale_array(graph.edges['branch_to_branch'].data['position'][:,3])
-    graph.edges['junction_to_junction'].data['position'][:,0:3] = \
-        rotate_array(graph.edges['junction_to_junction'].data['position'][:,0:3])
-    graph.edges['junction_to_junction'].data['position'][:,3] = \
-        scale_array(graph.edges['junction_to_junction'].data['position'][:,3])
-    graph.edges['junction_to_branch'].data['position'][:,0:3] = \
-        rotate_array(graph.edges['junction_to_branch'].data['position'][:,0:3])
-    graph.edges['junction_to_branch'].data['position'][:,3] = \
-        scale_array(graph.edges['junction_to_branch'].data['position'][:,3])
-    graph.edges['branch_to_junction'].data['position'][:,0:3] = \
-        rotate_array(graph.edges['branch_to_junction'].data['position'][:,0:3])
-    graph.edges['branch_to_junction'].data['position'][:,3] = \
-        scale_array(graph.edges['branch_to_junction'].data['position'][:,3])
+    graph.edges['branch_to_branch'].data['rel_position'][:,0:3] = \
+        rotate_array(graph.edges['branch_to_branch'].data['rel_position'][:,0:3])
+    graph.edges['branch_to_branch'].data['rel_position'][:,3] = \
+        scale_array(graph.edges['branch_to_branch'].data['rel_position'][:,3])
+    graph.edges['junction_to_junction'].data['rel_position'][:,0:3] = \
+        rotate_array(graph.edges['junction_to_junction'].data['rel_position'][:,0:3])
+    graph.edges['junction_to_junction'].data['rel_position'][:,3] = \
+        scale_array(graph.edges['junction_to_junction'].data['rel_position'][:,3])
+    graph.edges['junction_to_branch'].data['rel_position'][:,0:3] = \
+        rotate_array(graph.edges['junction_to_branch'].data['rel_position'][:,0:3])
+    graph.edges['junction_to_branch'].data['rel_position'][:,3] = \
+        scale_array(graph.edges['junction_to_branch'].data['rel_position'][:,3])
+    graph.edges['branch_to_junction'].data['rel_position'][:,0:3] = \
+        rotate_array(graph.edges['branch_to_junction'].data['rel_position'][:,0:3])
+    graph.edges['branch_to_junction'].data['rel_position'][:,3] = \
+        scale_array(graph.edges['branch_to_junction'].data['rel_position'][:,3])
     graph.edges['in_to_branch'].data['distance'] = \
         scale_array(graph.edges['in_to_branch'].data['distance'])
     graph.edges['in_to_junction'].data['distance'] = \
@@ -500,10 +500,10 @@ def normalize_dataset(data_folder, dataset_params,  output_dir = 'normalized_dat
         graph = graphs[name]
         nnodes = nnodes + graph.nodes['branch'].data['x'].shape[0]
         nnodes = nnodes + graph.nodes['junction'].data['x'].shape[0]
-        nedges = nedges + graph.edges['branch_to_branch'].data['position'].shape[0]
-        nedges = nedges + graph.edges['branch_to_junction'].data['position'].shape[0]
-        nedges = nedges + graph.edges['junction_to_junction'].data['position'].shape[0]
-        nedges = nedges + graph.edges['junction_to_branch'].data['position'].shape[0]
+        nedges = nedges + graph.edges['branch_to_branch'].data['rel_position'].shape[0]
+        nedges = nedges + graph.edges['branch_to_junction'].data['rel_position'].shape[0]
+        nedges = nedges + graph.edges['junction_to_junction'].data['rel_position'].shape[0]
+        nedges = nedges + graph.edges['junction_to_branch'].data['rel_position'].shape[0]
 
     numgraphs = len(graphs)
     print('n. graphs = ' + str(numgraphs))
@@ -533,25 +533,30 @@ def normalize_dataset(data_folder, dataset_params,  output_dir = 'normalized_dat
     for name in graphs:
         dgl.save_graphs(output_dir + '/' + name, graphs[name])
 
-    def default(obj):
-        if isinstance(obj, torch.Tensor):
-            return default(obj.detach().numpy())
-        if isinstance(obj, np.ndarray):
-            if obj.size == 1:
-                return obj[0]
-            else:
-                return obj.tolist()
-        print(obj)
-        raise TypeError('Not serializable')
 
     with open(output_dir + '/dataset_parameters.json', 'w') as outfile:
         json.dump(dataset_params, outfile, indent=4)
 
+    def flatten_dict(dicti):
+        for c in dicti:
+            cd = dicti[c]
+            if isinstance(cd, dict):
+                flatten_dict(cd)
+            if isinstance(cd, torch.Tensor):
+                dicti[c] = cd.detach().numpy()
+            if isinstance(cd, np.ndarray):
+                if dicti[c].size == 1:
+                    dicti[c] = float(cd[0])
+                else:
+                    dicti[c] = cd.tolist()
+
+    flatten_dict(coefs_dict)
+
     with open(output_dir + '/normalization_coefficients.json', 'w') as outfile:
-        json.dump(coefs_dict, outfile, default=default, indent=4)
+        json.dump(coefs_dict, outfile, indent=4)
 
 if __name__ == "__main__":
-    dataset_params = {'normalization': 'standard',
+    dataset_params = {'normalization': 'min_max',
                       'rate_noise': 60,
                       'label_normalization': 'min_max',
                       'augment_data': 0,

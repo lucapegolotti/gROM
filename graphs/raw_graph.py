@@ -755,22 +755,26 @@ class RawGraph:
         pos_b2b = np.zeros((nedges_b2b, 4))
         for iedg in range(nedges_b2b):
             pos_b2b[iedg,0:3] = nodes_branch[edges_b2b[iedg,1],:] - nodes_branch[edges_b2b[iedg,0],:]
-            pos_b2b[iedg,3] = np.linalg.norm(pos_b2b[iedg,0:2])
+            pos_b2b[iedg,3] = np.linalg.norm(pos_b2b[iedg,0:3])
+            # we normalize the vector distance
+            pos_b2b[iedg,0:3] = pos_b2b[iedg,0:3] / pos_b2b[iedg,3]
 
         nedges_j2j = edges_j2j.shape[0]
         pos_j2j = np.zeros((nedges_j2j, 4))
         for iedg in range(nedges_j2j):
             pos_j2j[iedg,0:3] = nodes_junct[edges_j2j[iedg,1],:] - nodes_junct[edges_j2j[iedg,0],:]
-            pos_j2j[iedg,3] = np.linalg.norm(pos_j2j[iedg,0:2])
+            pos_j2j[iedg,3] = np.linalg.norm(pos_j2j[iedg,0:3])
+            pos_j2j[iedg,0:3] = pos_j2j[iedg,0:3] / pos_j2j[iedg,3]
 
         nedges_b2j = edges_b2j.shape[0]
         pos_b2j = np.zeros((nedges_b2j, 4))
         for iedg in range(nedges_b2j):
             pos_b2j[iedg,0:3] = nodes_junct[edges_b2j[iedg,1],:] - nodes_branch[edges_b2j[iedg,0],:]
-            pos_b2j[iedg,3] = np.linalg.norm(pos_b2j[iedg,0:2])
+            pos_b2j[iedg,3] = np.linalg.norm(pos_b2j[iedg,0:3])
+            pos_b2j[iedg,0:3] = pos_b2j[iedg,0:3] / pos_b2j[iedg,3]
 
         pos_j2b = pos_b2j
-        pos_j2b[0:3] = -pos_j2b[0:3]
+        pos_j2b[:,0:3] = -pos_j2b[:,0:3]
 
         tangents_branch = tangents[branch_mask,:]
 

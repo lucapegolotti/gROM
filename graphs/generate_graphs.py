@@ -79,18 +79,26 @@ def create_fixed_graph(raw_graph, area):
 
     graph = dgl.heterograph(graph_data)
 
-    graph.edges['branch_to_branch'].data['position'] = \
-                        torch.from_numpy(branch_dict['pos'].astype(DTYPE))
+    graph.edges['branch_to_branch'].data['rel_position'] = \
+                        torch.from_numpy(branch_dict['pos'][:,0:3].astype(DTYPE))
+    graph.edges['branch_to_branch'].data['rel_position_norm'] = \
+                        torch.from_numpy(np.expand_dims(branch_dict['pos'][:,3],1).astype(DTYPE))
     graph.edges['branch_to_branch'].data['edges'] = \
                         torch.from_numpy(branch_dict['edges'])
-    graph.edges['junction_to_junction'].data['position'] = \
-                        torch.from_numpy(junct_dict['pos'].astype(DTYPE))
+    graph.edges['junction_to_junction'].data['rel_position'] = \
+                        torch.from_numpy(junct_dict['pos'][:,0:3].astype(DTYPE))
+    graph.edges['junction_to_junction'].data['rel_position_norm'] = \
+                        torch.from_numpy(np.expand_dims(junct_dict['pos'][:,3],1).astype(DTYPE))
     graph.edges['junction_to_junction'].data['edges'] = \
                         torch.from_numpy(junct_dict['edges'])
-    graph.edges['branch_to_junction'].data['position'] = \
-                        torch.from_numpy(branch_dict['pos_branch_to_junct'])
-    graph.edges['junction_to_branch'].data['position'] = \
-                        torch.from_numpy(junct_dict['pos_junct_to_branch'])
+    graph.edges['branch_to_junction'].data['rel_position'] = \
+                        torch.from_numpy(branch_dict['pos_branch_to_junct'][:,0:3].astype(DTYPE))
+    graph.edges['branch_to_junction'].data['rel_position_norm'] = \
+                        torch.from_numpy(np.expand_dims(branch_dict['pos_branch_to_junct'][:,3],1).astype(DTYPE))
+    graph.edges['junction_to_branch'].data['rel_position'] = \
+                        torch.from_numpy(junct_dict['pos_junct_to_branch'][:,0:3].astype(DTYPE))
+    graph.edges['junction_to_branch'].data['rel_position_norm'] = \
+                        torch.from_numpy(np.expand_dims(junct_dict['pos_junct_to_branch'][:,3],1).astype(DTYPE))
     graph.edges['in_to_branch'].data['distance'] = \
                         torch.from_numpy(inlet_dict['distance_branch'].astype(DTYPE))
     graph.edges['in_to_junction'].data['distance'] = \
@@ -313,7 +321,8 @@ def generate_graphs(model_name, model_params, input_dir, output_dir,
                                   folder + '/flowrate.mp4')
 
             print('Augmenting timesteps')
-            dt_new = round(np.random.normal(0.002, 0.0001) , 10)
+            # dt_new = round(np.random.normal(0.002, 0.0001) , 10)
+            dt_new = 0.002
 
             pressure = augment_time(pressure, model_params, dt_new)
             flowrate = augment_time(flowrate, model_params, dt_new)
@@ -345,7 +354,7 @@ def generate_graphs(model_name, model_params, input_dir, output_dir,
 if __name__ == "__main__":
     input_dir = 'vtps'
     output_dir = 'data/'
-    params = json.load(open(input_dir + '/dataset_aortas.json'))
+    params = json.load(open(input_dir + '/dataset_one.json'))
     # params2 = {}
     # params2['0087_1001'] = params['0087_1001']
     # params = params2
@@ -354,7 +363,7 @@ if __name__ == "__main__":
         params[model]['timestep'] = timesteps[model]
 
     failed_models = []
-    n_graphs_per_model = 500
+    n_graphs_per_model = 1
     for model in params:
         print('Processing {}'.format(model))
         success = generate_graphs(model, params[model], input_dir, output_dir,

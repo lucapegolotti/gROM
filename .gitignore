@@ -1,5 +1,6 @@
 .DS_Store
 vtps*
+datasets*
 *data_*
 data
 *_data*
