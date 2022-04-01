@@ -18,6 +18,7 @@ import pathlib
 import json
 import time
 import matplotlib.pyplot as plt
+import io_utils as io
 
 def get_times(graph):
     times = []
@@ -468,7 +469,7 @@ def rotate_graph(graph, identity = False):
     graph.nodes['outlet'].data['x'] = \
         rotate_array(graph.nodes['outlet'].data['x'])
 
-def normalize_dataset(data_folder, dataset_params,  output_dir = 'normalized_data/'):
+def normalize_dataset(data_folder, dataset_params,  output_dir):
     graphs_names = os.listdir(data_folder)
     graphs_names = graphs_names
 
@@ -539,7 +540,6 @@ def normalize_dataset(data_folder, dataset_params,  output_dir = 'normalized_dat
     for name in graphs:
         dgl.save_graphs(output_dir + '/' + name, graphs[name])
 
-
     with open(output_dir + '/dataset_parameters.json', 'w') as outfile:
         json.dump(dataset_params, outfile, indent=4)
 
@@ -568,4 +568,5 @@ if __name__ == "__main__":
                       'add_noise': False,
                       'noise_stdv': 1e-10}
 
-    normalize_dataset('data/', dataset_params)
+    normalize_dataset(io.data_location() + 'graphs/', dataset_params,
+                      io.data_location() + 'normalized_graphs/')

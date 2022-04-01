@@ -28,6 +28,7 @@ import pathlib
 from rollout import rollout
 import plot_tools as ptools
 import pickle
+import io_utils as io
 
 # try to use mse + param * torch.abs((input - target)).mean()
 def mse(input, target):
@@ -144,12 +145,12 @@ def evaluate_model(gnn_model, train_dataloader, loss, metric = None,
 def train_gnn_model(gnn_model, optimizer_name, train_params,
                     checkpoint_fct = None):
 
-    train_dataset = pickle.load(open('datasets/d0/train.dts', 'rb'))
+    train_dataset = pickle.load(open(io.data_location() + 'datasets/d0/train.dts', 'rb'))
     coefs_dict = train_dataset.coefs_dict
     dataset_params = train_dataset.dataset_params
     print('Dataset contains {:.0f} graphs'.format(len(train_dataset)), flush=True)
 
-    validation_dataset = pickle.load(open('datasets/d0/test.dts', 'rb'))
+    validation_dataset = pickle.load(open(io.data_location() + 'datasets/d0/test.dts', 'rb'))
 
     if dataset_params['label_normalization'] == 'min_max':
         def weighted_mae(input, target):
@@ -377,12 +378,12 @@ if __name__ == "__main__":
     except RuntimeError:
         print("MPI not supported. Running serially.")
 
-    dataset_json = json.load(open('../graphs/normalized_data/dataset_list.json'))
+    dataset_json = json.load(open(io.data_location() + 'normalized_graphs/dataset_list.json'))
 
     params_dict = {'infeat_nodes': 27,
                    'infeat_edges': 4,
-                   'latent_size_gnn': 8,
-                   'latent_size_mlp': 32,
+                   'latent_size_gnn': 16,
+                   'latent_size_mlp': 64,
                    'out_size': 2,
                    'process_iterations': 2,
                    'hl_mlp': 1,

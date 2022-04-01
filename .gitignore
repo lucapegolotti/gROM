@@ -1,9 +1,7 @@
 .DS_Store
 vtps*
 datasets*
-*data_*
 data
-*_data*
 __pycache__
 models
 gromenv
@@ -11,3 +9,4 @@ gromenv
 results_*
 check_interpolation
 normalized_data
+data_location.txt

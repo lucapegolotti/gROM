@@ -3,6 +3,12 @@ import vtk
 import numpy as np
 from vtk.util.numpy_support import vtk_to_numpy as v2n
 
+def data_location():
+    f = open('../data_location.txt', 'r')
+    location = f.readline().strip()
+    f.close()
+    return location + '/'
+
 def save_sequential_data(X, Y, mins, maxs, min_pressure, max_pressure, min_velocity, max_velocity,
                          model, stencil_size, center, var):
     directory = 'training_data/S_' + var + 'st' + str(stencil_size) + 'c' + str(center) + '/'

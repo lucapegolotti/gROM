@@ -22,6 +22,7 @@ import time
 import normalization as nrmz
 import pickle
 import pathlib
+import io_utils as io
 
 def set_state(graph, state_dict, next_state_dict = None, noise_dict = None, coefs_label = None):
     def per_node_type(node_type):
@@ -389,8 +390,8 @@ def prepare_dataset(dataset_json, nsets):
     return datasets
 
 if __name__ == "__main__":
-    dataset_dir = 'datasets/'
-    dataset_json = json.load(open('../graphs/normalized_data/dataset_list.json'))
+    dataset_dir = io.data_location() + 'datasets/'
+    dataset_json = json.load(open(io.data_location() + 'normalized_graphs/dataset_list.json'))
 
     nsets = 10
     datasets_models = prepare_dataset(dataset_json, nsets = 10)
@@ -401,11 +402,11 @@ if __name__ == "__main__":
         curfolder = dataset_dir + 'd' + str(i)
         pathlib.Path(curfolder).mkdir(parents=True, exist_ok=True)
         train_dataset = generate_dataset(datasets_models[i]['train'],
-                                         '../graphs/normalized_data',
+                                         io.data_location() + 'normalized_graphs',
                                          datasets_models[i],
                                          train = True)
         pickle.dump(train_dataset, open(curfolder + '/train.dts', 'wb'))
         test_dataset = generate_dataset(datasets_models[i]['test'],
-                                        '../graphs/normalized_data',
+                                        io.data_location() + 'normalized_graphs',
                                         datasets_models[i])
         pickle.dump(test_dataset, open(curfolder + '/test.dts', 'wb'))

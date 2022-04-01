@@ -7,6 +7,7 @@ os.environ['KMP_DUPLICATE_LIB_OK']='True'
 sys.path.append("../tools")
 sys.path.append("../graphs")
 
+import io_utils as io
 import dgl
 import torch
 import preprocessing as pp
@@ -204,11 +205,11 @@ if __name__ == "__main__":
     gnn_model.eval()
 
     dataset = pp.generate_dataset(params['dataset_parameters']['split']['train'], \
-                                     "../graphs/normalized_data", 'train')
+                                  io.data_location() + 'normalized_graphs', 'train')
     # check_loss(gnn_model, dataset, training.mse, params)
     evaluate_all_models(dataset, 'train', gnn_model, params)
 
     dataset = pp.generate_dataset(params['dataset_parameters']['split']['test'], \
-                                     "../graphs/normalized_data", 'test')
+                                  io.data_location() + 'normalized_graphs', 'test')
 
     evaluate_all_models(dataset, 'test', gnn_model, params)

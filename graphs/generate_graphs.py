@@ -352,12 +352,11 @@ def generate_graphs(model_name, model_params, input_dir, output_dir,
     return True
 
 if __name__ == "__main__":
-    input_dir = 'vtps'
-    output_dir = 'data/'
-    params = json.load(open(input_dir + '/dataset_one.json'))
-    # params2 = {}
-    # params2['0087_1001'] = params['0087_1001']
-    # params = params2
+    data_location = io.data_location()
+    input_dir = data_location + 'vtps'
+    output_dir = data_location + 'graphs/'
+    params = json.load(open(input_dir + '/dataset_aortas.json'))
+
     timesteps = json.load(open(input_dir + '/timesteps.json'))
     for model in params:
         params[model]['timestep'] = timesteps[model]
