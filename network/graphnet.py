@@ -230,7 +230,7 @@ class GraphNet(Module):
                                                label_coefs['std'][1]
         if coefs_dict['type'] == 'min_max':
             g.nodes['branch'].data['pred_q'] = g.nodes['branch'].data['pred_q'] * \
-                                               float(coefs_dict['flowrate']['max'] - coefs_dict['min']['flowrate'])
+                                               float(coefs_dict['flowrate']['max'] - coefs_dict['flowrate']['min'])
         elif coefs_dict['type'] == 'standard':
             g.nodes['branch'].data['pred_q'] = g.nodes['branch'].data['pred_q'] * \
                                                float(coefs_dict['flowrate']['std'])

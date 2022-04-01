@@ -208,7 +208,7 @@ if __name__ == "__main__":
     # check_loss(gnn_model, dataset, training.mse, params)
     evaluate_all_models(dataset, 'train', gnn_model, params)
 
-    dataset = pp.generate_dataset(params['dataset_parameters']['split']['validation'], \
-                                     "../graphs/normalized_data", 'validation')
+    dataset = pp.generate_dataset(params['dataset_parameters']['split']['test'], \
+                                     "../graphs/normalized_data", 'test')
 
-    evaluate_all_models(dataset, 'validation', gnn_model, params)
+    evaluate_all_models(dataset, 'test', gnn_model, params)

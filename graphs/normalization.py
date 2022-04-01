@@ -82,9 +82,14 @@ def set_timestep(targetgraph, allgraph, t, tp1):
 def min_max(field, bounds):
     ncomponents = bounds['min'].size
     if ncomponents == 1:
-        return (field - bounds['min']) / (bounds['max'] - bounds['min'])
+        scaling = (bounds['max'] - bounds['min'])
+        if scaling < 1e-12:
+            return field - bounds['min']
+        return (field - bounds['min']) / scaling
     for i in range(ncomponents):
-        field[:,i] = (field[:,i] - bounds['min'][i]) / (bounds['max'][i] - bounds['min'][i])
+        scaling = bounds['max'][i] - bounds['min'][i]
+        if scaling < 1e-12:
+            field[:,i] = (field[:,i] - bounds['min'][i]) / scaling
     return field
 
 def invert_min_max(field, bounds):
@@ -388,7 +393,8 @@ def rotate_graph(graph, identity = False):
     # we want to the keep the scale close to one otherwise flowrate and pressure
     # don't make sense
     if not identity:
-        scale = round(np.random.normal(1, 0.001) , 10)
+        # scale = round(np.random.normal(1, 0.001) , 10)
+        scale = 1
 
         # random rotation matrix
         R, _ = np.linalg.qr(np.random.rand(3,3))
@@ -402,30 +408,30 @@ def rotate_graph(graph, identity = False):
     def scale_array(inarray):
         return inarray * scale
 
-    graph.edges['branch_to_branch'].data['rel_position'][:,0:3] = \
-        rotate_array(graph.edges['branch_to_branch'].data['rel_position'][:,0:3])
-    graph.edges['branch_to_branch'].data['rel_position'][:,3] = \
-        scale_array(graph.edges['branch_to_branch'].data['rel_position'][:,3])
-    graph.edges['junction_to_junction'].data['rel_position'][:,0:3] = \
-        rotate_array(graph.edges['junction_to_junction'].data['rel_position'][:,0:3])
-    graph.edges['junction_to_junction'].data['rel_position'][:,3] = \
-        scale_array(graph.edges['junction_to_junction'].data['rel_position'][:,3])
-    graph.edges['junction_to_branch'].data['rel_position'][:,0:3] = \
-        rotate_array(graph.edges['junction_to_branch'].data['rel_position'][:,0:3])
-    graph.edges['junction_to_branch'].data['rel_position'][:,3] = \
-        scale_array(graph.edges['junction_to_branch'].data['rel_position'][:,3])
-    graph.edges['branch_to_junction'].data['rel_position'][:,0:3] = \
-        rotate_array(graph.edges['branch_to_junction'].data['rel_position'][:,0:3])
-    graph.edges['branch_to_junction'].data['rel_position'][:,3] = \
-        scale_array(graph.edges['branch_to_junction'].data['rel_position'][:,3])
-    graph.edges['in_to_branch'].data['distance'] = \
-        scale_array(graph.edges['in_to_branch'].data['distance'])
-    graph.edges['in_to_junction'].data['distance'] = \
-        scale_array(graph.edges['in_to_junction'].data['distance'])
-    graph.edges['out_to_branch'].data['distance'] = \
-        scale_array(graph.edges['out_to_branch'].data['distance'])
-    graph.edges['out_to_junction'].data['distance'] = \
-        scale_array(graph.edges['out_to_junction'].data['distance'])
+    graph.edges['branch_to_branch'].data['rel_position'] = \
+        rotate_array(graph.edges['branch_to_branch'].data['rel_position'])
+    graph.edges['branch_to_branch'].data['rel_position'] = \
+        scale_array(graph.edges['branch_to_branch'].data['rel_position'])
+    graph.edges['junction_to_junction'].data['rel_position'] = \
+        rotate_array(graph.edges['junction_to_junction'].data['rel_position'])
+    graph.edges['junction_to_junction'].data['rel_position'] = \
+        scale_array(graph.edges['junction_to_junction'].data['rel_position'])
+    graph.edges['junction_to_branch'].data['rel_position'] = \
+        rotate_array(graph.edges['junction_to_branch'].data['rel_position'])
+    graph.edges['junction_to_branch'].data['rel_position'] = \
+        scale_array(graph.edges['junction_to_branch'].data['rel_position'])
+    graph.edges['branch_to_junction'].data['rel_position'] = \
+        rotate_array(graph.edges['branch_to_junction'].data['rel_position'])
+    # graph.edges['branch_to_junction'].data['rel_position'][:,3] = \
+    #     scale_array(graph.edges['branch_to_junction'].data['rel_position'])
+    # graph.edges['in_to_branch'].data['distance'] = \
+    #     scale_array(graph.edges['in_to_branch'].data['distance'])
+    # graph.edges['in_to_junction'].data['distance'] = \
+    #     scale_array(graph.edges['in_to_junction'].data['distance'])
+    # graph.edges['out_to_branch'].data['distance'] = \
+    #     scale_array(graph.edges['out_to_branch'].data['distance'])
+    # graph.edges['out_to_junction'].data['distance'] = \
+    #     scale_array(graph.edges['out_to_junction'].data['distance'])
 
     # fig = plt.figure()
     # ax = plt.axes(projection='3d')
@@ -556,8 +562,7 @@ def normalize_dataset(data_folder, dataset_params,  output_dir = 'normalized_dat
         json.dump(coefs_dict, outfile, indent=4)
 
 if __name__ == "__main__":
-    dataset_params = {'normalization': 'min_max',
-                      'rate_noise': 60,
+    dataset_params = {'normalization': 'standard',
                       'label_normalization': 'min_max',
                       'augment_data': 0,
                       'add_noise': False,

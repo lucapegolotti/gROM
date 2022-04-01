@@ -215,7 +215,7 @@ def train_gnn_model(gnn_model, optimizer_name, train_params,
         scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer,
                                                            gamma=train_params['weight_decay'])
     elif scheduler_name == 'cosine':
-        eta_min = train_params['learning_rate'] * train_params['weight_decay']
+        eta_min = train_params['learning_rate'] * train_params['lr_decay']
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,
                                                                T_max=nepochs,
                                                                eta_min=eta_min)
@@ -235,14 +235,18 @@ def train_gnn_model(gnn_model, optimizer_name, train_params,
     history['validation_metric'] = [[],[]]
     history['validation_rollout_error'] = [[],[]]
 
+    dataset_params['rate_noise'] = 60
+
     for epoch in range(nepochs):
-        if epoch >= noise_start:
-            if epoch >= noise_start + ramp_epochs:
-                train_dataset.sample_noise(dataset_params['rate_noise'])
-                validation_dataset.sample_noise(dataset_params['rate_noise'])
-            else:
-                train_dataset.sample_noise(dataset_params['rate_noise'] * (epoch - noise_start)/ramp_epochs)
-                validation_dataset.sample_noise(dataset_params['rate_noise'] * (epoch - noise_start)/ramp_epochs)
+        train_dataset.sample_noise(dataset_params['rate_noise'])
+        validation_dataset.sample_noise(dataset_params['rate_noise'])
+        # if epoch >= noise_start:
+        #     if epoch >= noise_start + ramp_epochs:
+        #         train_dataset.sample_noise(dataset_params['rate_noise'])
+        #         validation_dataset.sample_noise(dataset_params['rate_noise'])
+        #     else:
+        #         train_dataset.sample_noise(dataset_params['rate_noise'] * (epoch - noise_start)/ramp_epochs)
+        #         validation_dataset.sample_noise(dataset_params['rate_noise'] * (epoch - noise_start)/ramp_epochs)
 
         train_results, val_results, elapsed = evaluate_model(gnn_model, train_dataloader,
                                                              mse, weighted_mae, optimizer,
@@ -259,6 +263,11 @@ def train_gnn_model(gnn_model, optimizer_name, train_params,
         msg = msg + 'val_con_loss = {:.2e} '.format(val_results['continuity_loss']/val_results['count'])
         msg = msg + 'time = {:.2f} s'.format(elapsed)
 
+        # def get_lr(optimizer):
+        #     for param_group in optimizer.param_groups:
+        #         return param_group['lr']
+        # print(get_lr(optimizer))
+
         history['train_loss'][0].append(epoch)
         history['train_loss'][1].append(train_results['global_loss']/train_results['count'])
         history['train_metric'][0].append(epoch)
@@ -273,6 +282,8 @@ def train_gnn_model(gnn_model, optimizer_name, train_params,
         if checkpoint_fct != None:
             if epoch in chckp_epochs:
                 checkpoint_fct(global_loss/count)
+
+        scheduler.step()
 
     # # compute final loss
     # train_results, val_results, elapsed = evaluate_model(gnn_model, train_dataloader,
@@ -368,31 +379,23 @@ if __name__ == "__main__":
 
     dataset_json = json.load(open('../graphs/normalized_data/dataset_list.json'))
 
-    # params_dict = {'infeat_nodes': 13,
-    #                'infeat_edges': 4,
-    #                'latent_size_gnn': 16,
-    #                'latent_size_mlp': 64,
-    #                'out_size': 2,
-    #                'process_iterations': 3,
-    #                'hl_mlp': 1,
-    #                'normalize': 1,
-    #                'average_flowrate_training': 0}
     params_dict = {'infeat_nodes': 27,
                    'infeat_edges': 4,
                    'latent_size_gnn': 8,
                    'latent_size_mlp': 32,
                    'out_size': 2,
-                   'process_iterations': 3,
+                   'process_iterations': 2,
                    'hl_mlp': 1,
                    'normalize': 1,
                    'average_flowrate_training': 0}
-    train_params = {'learning_rate': 0.0008,
-                    'weight_decay': 0.6,
+    train_params = {'learning_rate': 0.008223127794360673,
                     'momentum': 0.0,
-                    'batch_size': 1,
+                    'batch_size': 100,
+                    'lr_decay': 0.1,
                     'nepochs': 400,
-                    'continuity_coeff': -5,
-                    'bc_coeff': -5}
+                    'continuity_coeff': -3,
+                    'bc_coeff': -5,
+                    'weight_decay': 1e-5}
 
     start = time.time()
     launch_training(dataset_json,  'adam', params_dict, train_params,
