@@ -7,6 +7,7 @@ os.environ['KMP_DUPLICATE_LIB_OK']='True'
 sys.path.append("../tools")
 sys.path.append("../graphs")
 
+import io_utils as io
 import dgl
 import torch
 import preprocessing as pp
@@ -29,7 +30,7 @@ def rollout(gnn_model, params, dataset, index_graph, split):
     gnn_model.eval()
     graph = dataset.lightgraphs[index_graph]
     model_name = params['dataset_parameters']['split'][split][index_graph]
-    true_graph = load_graphs('../graphs/normalized_data/' + model_name + '.0.grph')[0][0]
+    true_graph = load_graphs(io.data_location() + 'normalized_graphs/' + model_name + '.0.grph')[0][0]
     times = nrmz.get_times(true_graph)
 
     coefs_dict = params['normalization_coefficients']['features']

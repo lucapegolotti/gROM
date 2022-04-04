@@ -89,7 +89,7 @@ def print_rollout_errors(errors):
     print('Error flowrate branches = {:.5e}'.format(errors['q_branch']))
     print('Global error branches = {:.5e}'.format(np.sqrt(errors['p_branch']**2 + errors['q_branch']**2)))
     print('Error pressure junctions = {:.5e}'.format(errors['p_junction']))
-    print('Error flowrate junctions = {:.5e}'.format(errors['p_junction']))
+    print('Error flowrate junctions = {:.5e}'.format(errors['q_junction']))
     print('Global error junctions = {:.5e}'.format(np.sqrt(errors['p_junction']**2 + errors['p_junction']**2)))
     print('Error pressure = {:.5e}'.format(errors['p']))
     print('Error flowrate = {:.5e}'.format(errors['q']))
