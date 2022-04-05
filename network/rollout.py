@@ -26,7 +26,7 @@ import shutil
 import pathlib
 import normalization as nrmz
 
-def rollout(gnn_model, params, dataset, index_graph, split):
+def rollout(gnn_model, params, dataset, index_graph, split, print_time = True):
     gnn_model.eval()
     graph = dataset.lightgraphs[index_graph]
     model_name = params['dataset_parameters']['split'][split][index_graph]
@@ -205,8 +205,9 @@ def rollout(gnn_model, params, dataset, index_graph, split):
 
     end = time.time()
 
-    print('Rollout time = {:.2f} s for {:.0f} timesteps'.format(end - start,
-                                                                len(times)))
+    if print_time:
+        print('Rollout time = {:.2f} s for {:.0f} timesteps'.format(end - start,
+                                                                    len(times)))
 
     err_p_branch = np.sqrt(err_p_branch / norm_p_branch)
     err_q_branch = np.sqrt(err_q_branch / norm_q_branch)

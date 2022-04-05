@@ -362,7 +362,7 @@ if __name__ == "__main__":
         params[model]['timestep'] = timesteps[model]
 
     failed_models = []
-    n_graphs_per_model = 10
+    n_graphs_per_model = 1
     for model in params:
         print('Processing {}'.format(model))
         success = generate_graphs(model, params[model], input_dir, output_dir,

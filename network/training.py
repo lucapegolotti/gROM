@@ -45,7 +45,7 @@ def generate_gnn_model(params_dict):
 def evaluate_model(gnn_model, train_dataloader, loss, metric = None,
                    optimizer = None, continuity_coeff = 0.0,
                    bc_coeff = 0.0,
-                   validation_dataloader = None,
+                   test_dataloader = None,
                    train = True):
 
     try:
@@ -133,24 +133,32 @@ def evaluate_model(gnn_model, train_dataloader, loss, metric = None,
         return {'global_loss': global_loss, 'count': count,
                 'continuity_loss': c_loss_global, 'global_metric': global_metric}
 
-    validation_results = None
+    test_results = None
     start = time.time()
-    if validation_dataloader:
-        validation_results = loop_over(validation_dataloader)
+    if test_dataloader:
+        test_results = loop_over(test_dataloader)
     train_results = loop_over(train_dataloader, optimizer)
     end = time.time()
 
-    return train_results, validation_results, end - start
+    return train_results, test_results, end - start
 
-def train_gnn_model(gnn_model, optimizer_name, train_params,
+def train_gnn_model(gnn_model, optimizer_name, parameters,
                     checkpoint_fct = None):
 
+
     train_dataset = pickle.load(open(io.data_location() + 'datasets/d0/train.dts', 'rb'))
+    train_dataset_rollout = pickle.load(open(io.data_location() + 'datasets/d0/train_not_augmented.dts', 'rb'))
     coefs_dict = train_dataset.coefs_dict
     dataset_params = train_dataset.dataset_params
+    coefs = {'features': coefs_dict,
+             'labels': train_dataset.label_coefs}
+    train_params = parameters['train_parameters']
+    parameters['dataset_parameters'] = dataset_params
+    parameters['normalization_coefficients'] = coefs
+
     print('Dataset contains {:.0f} graphs'.format(len(train_dataset)), flush=True)
 
-    validation_dataset = pickle.load(open(io.data_location() + 'datasets/d0/test.dts', 'rb'))
+    test_dataset = pickle.load(open(io.data_location() + 'datasets/d0/test.dts', 'rb'))
 
     if dataset_params['label_normalization'] == 'min_max':
         def weighted_mae(input, target):
@@ -177,20 +185,20 @@ def train_gnn_model(gnn_model, optimizer_name, train_params,
     try:
         gnn_model.module.set_normalization_coefs(coefs_dict)
         train_sampler = DistributedSampler(train_dataset, num_replicas=dist.get_world_size(), rank=dist.get_rank())
-        validation_sampler = DistributedSampler(validation_dataset, num_replicas=dist.get_world_size(), rank=dist.get_rank())
+        test_sampler = DistributedSampler(test_dataset, num_replicas=dist.get_world_size(), rank=dist.get_rank())
     except AttributeError:
         gnn_model.set_normalization_coefs(coefs_dict)
         num_examples = len(train_dataset)
         num_train = int(num_examples)
         train_sampler = SubsetRandomSampler(torch.arange(num_train))
-        num_examples = len(validation_dataset)
+        num_examples = len(test_dataset)
         num_validation = int(num_examples)
-        validation_sampler = SubsetRandomSampler(torch.arange(num_validation))
+        test_sampler = SubsetRandomSampler(torch.arange(num_validation))
 
     train_dataloader = GraphDataLoader(train_dataset, sampler=train_sampler,
                                        batch_size=train_params['batch_size'],
                                        drop_last=False)
-    validation_dataloader = GraphDataLoader(validation_dataset, sampler=validation_sampler,
+    test_dataloader = GraphDataLoader(test_dataset, sampler=test_sampler,
                                             batch_size=train_params['batch_size'],
                                             drop_last=False)
     try:
@@ -225,33 +233,23 @@ def train_gnn_model(gnn_model, optimizer_name, train_params,
         # 200 is the maximum number of sigopt checkpoint
         chckp_epochs = list(np.floor(np.linspace(0, nepochs, 200)))
 
-    noise_start = nepochs / 10
-    ramp_epochs = int(np.floor(nepochs/2))
-
     history = {}
     history['train_loss'] = [[],[]]
     history['train_metric'] = [[],[]]
     history['train_rollout_error'] = [[],[]]
-    history['validation_loss'] = [[],[]]
-    history['validation_metric'] = [[],[]]
-    history['validation_rollout_error'] = [[],[]]
+    history['test_loss'] = [[],[]]
+    history['test_metric'] = [[],[]]
+    history['test_rollout_error'] = [[],[]]
 
     dataset_params['rate_noise'] = 600
 
     for epoch in range(nepochs):
         train_dataset.sample_noise(dataset_params['rate_noise'])
-        validation_dataset.sample_noise(dataset_params['rate_noise'])
-        # if epoch >= noise_start:
-        #     if epoch >= noise_start + ramp_epochs:
-        #         train_dataset.sample_noise(dataset_params['rate_noise'])
-        #         validation_dataset.sample_noise(dataset_params['rate_noise'])
-        #     else:
-        #         train_dataset.sample_noise(dataset_params['rate_noise'] * (epoch - noise_start)/ramp_epochs)
-        #         validation_dataset.sample_noise(dataset_params['rate_noise'] * (epoch - noise_start)/ramp_epochs)
+        test_dataset.sample_noise(dataset_params['rate_noise'])
 
         train_results, val_results, elapsed = evaluate_model(gnn_model, train_dataloader,
                                                              mse, weighted_mae, optimizer,
-                                                             validation_dataloader = validation_dataloader,
+                                                             test_dataloader = test_dataloader,
                                                              continuity_coeff = 10**train_params['continuity_coeff'],
                                                              bc_coeff = 10**train_params['bc_coeff'])
 
@@ -264,6 +262,79 @@ def train_gnn_model(gnn_model, optimizer_name, train_params,
         msg = msg + 'val_con_loss = {:.2e} '.format(val_results['continuity_loss']/val_results['count'])
         msg = msg + 'time = {:.2f} s'.format(elapsed)
 
+        print(msg, flush=True)
+
+        if epoch % 1 == 0:
+            nrollout = 2
+            random.seed(10)
+            indices = random.sample(list(range(len(parameters['dataset_parameters']['split']['train']))), nrollout)
+
+            error_branches_train = 0
+            error_junctions_train = 0
+            error_global_train = 0
+            for index in indices:
+                errors, _, _, _ = rollout(gnn_model, parameters,
+                                          train_dataset_rollout,
+                                          index_graph = index,
+                                          split = 'train',
+                                          print_time = False)
+
+                error_branches_train = error_branches_train + \
+                                       np.sqrt(errors['p_branch']**2 + errors['q_branch']**2)
+
+                error_junctions_train = error_junctions_train + \
+                                        np.sqrt(errors['p_junction']**2 + errors['q_junction']**2)
+
+                error_global_train = error_global_train + \
+                                     np.sqrt(errors['p']**2 + errors['q']**2)
+
+            error_branches_train = error_branches_train / nrollout
+            error_junctions_train = error_junctions_train / nrollout
+            error_global_train = error_global_train / nrollout
+
+            history['train_rollout_error'][0].append(epoch)
+            history['train_rollout_error'][1].append(error_global_train)
+
+            msg = 'Rollout train: '
+            msg = msg + 'rollout_error_branch = {:.5e} '.format(error_branches_train)
+            msg = msg + 'rollout_error_junctions = {:.5e} '.format(error_junctions_train)
+            msg = msg + 'rollout_error_global = {:.5e} '.format(error_global_train)
+
+            print(msg)
+
+            indices = random.sample(list(range(len(parameters['dataset_parameters']['split']['test']))), nrollout)
+
+            error_branches_test = 0
+            error_junctions_test = 0
+            error_global_test = 0
+            for index in indices:
+                errors, _, _, _ = rollout(gnn_model, parameters,
+                                          test_dataset,
+                                          index_graph = index,
+                                          split = 'test',
+                                          print_time = False)
+
+                error_branches_test = error_branches_test + \
+                                       np.sqrt(errors['p_branch']**2 + errors['q_branch']**2)
+
+                error_junctions_test = error_junctions_test + \
+                                        np.sqrt(errors['p_junction']**2 + errors['q_junction']**2)
+
+                error_global_test = error_global_test + \
+                                     np.sqrt(errors['p']**2 + errors['q']**2)
+
+            error_global_test = error_global_test / nrollout
+
+            history['test_rollout_error'][0].append(epoch)
+            history['test_rollout_error'][1].append(error_global_test)
+
+            msg = 'Rollout test: '
+            msg = msg + 'rollout_error_branch = {:.5e} '.format(error_branches_test)
+            msg = msg + 'rollout_error_junctions = {:.5e} '.format(error_junctions_test)
+            msg = msg + 'rollout_error_global = {:.5e} '.format(error_global_test)
+
+            print(msg)
+
         # def get_lr(optimizer):
         #     for param_group in optimizer.param_groups:
         #         return param_group['lr']
@@ -273,12 +344,10 @@ def train_gnn_model(gnn_model, optimizer_name, train_params,
         history['train_loss'][1].append(train_results['global_loss']/train_results['count'])
         history['train_metric'][0].append(epoch)
         history['train_metric'][1].append(train_results['global_metric']/train_results['count'])
-        history['validation_loss'][0].append(epoch)
-        history['validation_loss'][1].append(val_results['global_loss']/val_results['count'])
-        history['validation_metric'][0].append(epoch)
-        history['validation_metric'][1].append(val_results['global_metric']/val_results['count'])
-
-        print(msg, flush=True)
+        history['test_loss'][0].append(epoch)
+        history['test_loss'][1].append(val_results['global_loss']/val_results['count'])
+        history['test_metric'][0].append(epoch)
+        history['test_metric'][1].append(val_results['global_metric']/val_results['count'])
 
         if checkpoint_fct != None:
             if epoch in chckp_epochs:
@@ -286,25 +355,8 @@ def train_gnn_model(gnn_model, optimizer_name, train_params,
 
         scheduler.step()
 
-    # # compute final loss
-    # train_results, val_results, elapsed = evaluate_model(gnn_model, train_dataloader,
-    #                                                      mse, weighted_mae,
-    #                                                      validation_dataloader = validation_dataloader,
-    #                                                      continuity_coeff = 10**train_params['continuity_coeff'])
-    # msg = 'end\t'
-    # msg = msg + 'train_loss = {:.2e} '.format(train_results['global_loss']/train_results['count'])
-    # msg = msg + 'train_mae = {:.2e} '.format(train_results['global_metric']/train_results['count'])
-    # msg = msg + 'train_con_loss = {:.2e} '.format(train_results['continuity_loss']/train_results['count'])
-    # msg = msg + 'val_loss = {:.2e} '.format(val_results['global_loss']/val_results['count'])
-    # msg = msg + 'val_mae = {:.2e} '.format(val_results['global_metric']/val_results['count'])
-    # msg = msg + 'val_con_loss = {:.2e} '.format(val_results['continuity_loss']/val_results['count'])
-    # msg = msg + 'time = {:.2f} s'.format(elapsed)
-
-    print(msg, flush=True)
-
     return gnn_model, train_dataloader, train_results['global_loss']/train_results['count'], \
-           train_results['global_metric']/train_results['count'], coefs_dict, train_dataset, \
-           dataset_params, history
+           train_results['global_metric']/train_results['count'], coefs_dict, train_dataset, history
 
 def launch_training(dataset_json, optimizer_name, params_dict,
                     train_params, plot_validation = True, checkpoint_fct = None):
@@ -332,31 +384,8 @@ def launch_training(dataset_json, optimizer_name, params_dict,
         if save_data:
             save_model('initial_gnn.pms')
 
-    gnn_model, train_loader, loss, mae, \
-    coefs_dict, dataset, dataset_params, history = train_gnn_model(gnn_model,
-                                                                   optimizer_name,
-                                                                   train_params,
-                                                                   checkpoint_fct)
-
-    if save_data:
-        save_model('trained_gnn.pms')
-
-    coefs = {'features': coefs_dict,
-             'labels': dataset.label_coefs}
-
     parameters = {'hyperparameters': params_dict,
-                  'train_parameters': train_params,
-                  'dataset_parameters': dataset_params,
-                  'normalization_coefficients': coefs}
-
-    if save_data:
-        ptools.plot_history(history['train_loss'],
-                        history['validation_loss'],
-                        'loss', folder)
-
-        ptools.plot_history(history['train_metric'],
-                            history['validation_metric'],
-                            'mae', folder)
+                  'train_parameters': train_params}
 
     def default(obj):
         if isinstance(obj, torch.Tensor):
@@ -366,9 +395,32 @@ def launch_training(dataset_json, optimizer_name, params_dict,
         print(obj)
         raise TypeError('Not serializable')
 
+    gnn_model, train_loader, loss, mae, \
+    coefs_dict, dataset, history = train_gnn_model(gnn_model,
+                                                   optimizer_name,
+                                                   parameters,
+                                                   checkpoint_fct)
+
+    if save_data:
+        ptools.plot_history(history['train_loss'],
+                        history['test_loss'],
+                        'loss', folder)
+
+        ptools.plot_history(history['train_metric'],
+                            history['test_metric'],
+                            'mae', folder)
+
+        ptools.plot_history(history['train_rollout_error'],
+                            history['test_rollout_error'],
+                            'rollout', folder)
+
     if save_data:
         with open(folder + '/parameters.json', 'w') as outfile:
             json.dump(parameters, outfile, default=default, indent=4)
+
+    if save_data:
+        save_model('trained_gnn.pms')
+
     return gnn_model, loss, mae, dataset, coefs_dict, folder, parameters
 
 if __name__ == "__main__":
@@ -393,7 +445,7 @@ if __name__ == "__main__":
                     'momentum': 0.0,
                     'batch_size': 100,
                     'lr_decay': 0.1,
-                    'nepochs': 500,
+                    'nepochs': 100,
                     'continuity_coeff': -3,
                     'bc_coeff': -5,
                     'weight_decay': 1e-5}

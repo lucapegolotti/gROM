@@ -406,6 +406,10 @@ if __name__ == "__main__":
                                          datasets_models[i],
                                          train = True)
         pickle.dump(train_dataset, open(curfolder + '/train.dts', 'wb'))
+        train_dataset = generate_dataset(datasets_models[i]['train'],
+                                         io.data_location() + 'normalized_graphs',
+                                         datasets_models[i])
+        pickle.dump(train_dataset, open(curfolder + '/train_not_augmented.dts', 'wb'))
         test_dataset = generate_dataset(datasets_models[i]['test'],
                                         io.data_location() + 'normalized_graphs',
                                         datasets_models[i])
