@@ -2,15 +2,16 @@ name: gROM Optimization
 metrics:
 - name: loss
   strategy: store
-- name: global_error
-  strategy: optimize
-  objective: minimize
-- name: error_flowrate
-  strategy: store
-- name: error_pressure
-  strategy: store
 - name: mae
   strategy: store
+- name: train_rollout
+  strategy: store
+- name: test_rollout
+  strategy: optimize
+  objective: minimize
+- name: overfitting
+  strategy: optimize
+  objective: minimize
 parameters:
 - name: latent_size_gnn
   bounds:
@@ -24,13 +25,13 @@ parameters:
   type: int
 - name: learning_rate
   bounds:
-    min: 0.001
-    max: 0.1
+    min: 0.0001
+    max: 0.05
   type: double
-- name: weight_decay
+- name: lr_decay
   bounds:
     min: 0.01
-    max: 0.1
+    max: 0.9
   type: double
 - name: process_iterations
   bounds:
@@ -45,22 +46,17 @@ parameters:
 - name: batch_size
   bounds:
     min: 10
-    max: 100
+    max: 300
   type: int
 - name: rate_noise
   bounds:
-    min: 0.001
-    max: 0.01
+    min: 1
+    max: 2000
   type: double
 - name: continuity_coeff
   bounds:
     min: -5
-    max: 0
-  type: int
-- name: average_flowrate_training
-  bounds:
-    min: 0
-    max: 1
+    max: -3
   type: int
 budget: 100
 parallel_bandwidth: 20

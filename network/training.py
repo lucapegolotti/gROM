@@ -241,11 +241,9 @@ def train_gnn_model(gnn_model, optimizer_name, parameters,
     history['test_metric'] = [[],[]]
     history['test_rollout_error'] = [[],[]]
 
-    dataset_params['rate_noise'] = 600
-
     for epoch in range(nepochs):
-        train_dataset.sample_noise(dataset_params['rate_noise'])
-        test_dataset.sample_noise(dataset_params['rate_noise'])
+        train_dataset.sample_noise(parameters['train_parameters']['rate_noise'])
+        test_dataset.sample_noise(parameters['train_parameters']['rate_noise'])
 
         train_results, val_results, elapsed = evaluate_model(gnn_model, train_dataloader,
                                                              mse, weighted_mae, optimizer,
@@ -351,7 +349,7 @@ def train_gnn_model(gnn_model, optimizer_name, parameters,
 
         if checkpoint_fct != None:
             if epoch in chckp_epochs:
-                checkpoint_fct(global_loss/count)
+                checkpoint_fct(history['test_rollout_error'][1][-1])
 
         scheduler.step()
 
@@ -421,7 +419,7 @@ def launch_training(dataset_json, optimizer_name, params_dict,
     if save_data:
         save_model('trained_gnn.pms')
 
-    return gnn_model, loss, mae, dataset, coefs_dict, folder, parameters
+    return gnn_model, history, dataset, coefs_dict, folder, parameters
 
 if __name__ == "__main__":
     try:
@@ -448,7 +446,8 @@ if __name__ == "__main__":
                     'nepochs': 100,
                     'continuity_coeff': -3,
                     'bc_coeff': -5,
-                    'weight_decay': 1e-5}
+                    'weight_decay': 1e-5,
+                    'rate_noise': 600}
 
     start = time.time()
     launch_training(dataset_json,  'adam', params_dict, train_params,
