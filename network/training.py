@@ -29,6 +29,7 @@ from rollout import rollout
 import plot_tools as ptools
 import pickle
 import io_utils as io
+import argparse
 
 # try to use mse + param * torch.abs((input - target)).mean()
 def mse(input, target):
@@ -145,14 +146,14 @@ def evaluate_model(gnn_model, train_dataloader, loss, metric = None,
 def train_gnn_model(gnn_model, optimizer_name, parameters,
                     checkpoint_fct = None):
 
-
+    train_params = parameters['train_parameters']
     train_dataset = pickle.load(open(io.data_location() + 'datasets/d0/train.dts', 'rb'))
+    train_dataset.set_max_model_version(train_params['max_model_version'])
     train_dataset_rollout = pickle.load(open(io.data_location() + 'datasets/d0/train_not_augmented.dts', 'rb'))
     coefs_dict = train_dataset.coefs_dict
     dataset_params = train_dataset.dataset_params
     coefs = {'features': coefs_dict,
              'labels': train_dataset.label_coefs}
-    train_params = parameters['train_parameters']
     parameters['dataset_parameters'] = dataset_params
     parameters['normalization_coefficients'] = coefs
 
@@ -262,7 +263,7 @@ def train_gnn_model(gnn_model, optimizer_name, parameters,
 
         print(msg, flush=True)
 
-        if epoch % 1 == 0:
+        if epoch % 5 == 0 or epoch == nepochs-1:
             nrollout = 2
             random.seed(10)
             indices = random.sample(list(range(len(parameters['dataset_parameters']['split']['train']))), nrollout)
@@ -333,6 +334,9 @@ def train_gnn_model(gnn_model, optimizer_name, parameters,
 
             print(msg)
 
+        if epoch == nepochs-1:
+            print("Final rollout error on test = {:.5}".format(error_global_test))
+
         # def get_lr(optimizer):
         #     for param_group in optimizer.param_groups:
         #         return param_group['lr']
@@ -357,9 +361,10 @@ def train_gnn_model(gnn_model, optimizer_name, parameters,
            train_results['global_metric']/train_results['count'], coefs_dict, train_dataset, history
 
 def launch_training(dataset_json, optimizer_name, params_dict,
-                    train_params, plot_validation = True, checkpoint_fct = None):
+                    train_params, plot_validation = True, checkpoint_fct = None,
+                    out_dir = 'models/'):
     now = datetime.now()
-    folder = 'models/' + now.strftime("%d.%m.%Y_%H.%M.%S")
+    folder = out_dir + now.strftime("%d.%m.%Y_%H.%M.%S")
     def save_model(filename):
         try:
             # we call the method on .module because otherwise the pms file
@@ -419,6 +424,10 @@ def launch_training(dataset_json, optimizer_name, params_dict,
     if save_data:
         save_model('trained_gnn.pms')
 
+    if save_data:
+        with open(folder + '/history.bnr', 'wb') as outfile:
+            pickle.dump(history, outfile)
+
     return gnn_model, history, dataset, coefs_dict, folder, parameters
 
 if __name__ == "__main__":
@@ -430,27 +439,46 @@ if __name__ == "__main__":
 
     dataset_json = json.load(open(io.data_location() + 'normalized_graphs/dataset_list.json'))
 
-    params_dict = {'infeat_nodes': 27,
-                   'infeat_edges': 4,
-                   'latent_size_gnn': 16,
-                   'latent_size_mlp': 64,
+    parser = argparse.ArgumentParser(description='gROM SimVascular Project.')
+
+    parser.add_argument('--bs', help='batch size', type=int, default=100)
+    parser.add_argument('--epochs', help='total number of epochs', type=int, default=1)
+    parser.add_argument('--lr_decay', help='learning rate decay', type=float, default=0.1)
+    parser.add_argument('--lr', help='learning rate', type=float, default=0.008)
+    parser.add_argument('--rate_noise', help='rate noise', type=float, default=600)
+    parser.add_argument('--continuity_coeff', help='continuity coefficient', type=int, default=-3)
+    parser.add_argument('--bc_coeff', help='boundary conditions coefficient', type=int, default=-5)
+    parser.add_argument('--momentum', help='momentum', type=float, default=0)
+    parser.add_argument('--weight_decay', help='weight decay for l2 regularization', type=float, default=1e-5)
+    parser.add_argument('--ls_gnn', help='latent size gnn', type=int, default=16)
+    parser.add_argument('--ls_mlp', help='latent size mlps', type=int, default=64)
+    parser.add_argument('--process_iterations', help='gnn layers', type=int, default=2)
+    parser.add_argument('--hl_mlp', help='hidden layers mlps', type=int, default=1)
+    parser.add_argument('--mvv', help='max model version', type=int, default=0)
+
+    args = parser.parse_args()
+
+    params_dict = {'infeat_edges': 4,
+                   'latent_size_gnn': args.ls_gnn,
+                   'latent_size_mlp': args.ls_mlp,
                    'out_size': 2,
-                   'process_iterations': 2,
-                   'hl_mlp': 1,
+                   'process_iterations': args.process_iterations,
+                   'hl_mlp': args.hl_mlp,
                    'normalize': 1,
                    'average_flowrate_training': 0}
-    train_params = {'learning_rate': 0.008223127794360673,
-                    'momentum': 0.0,
-                    'batch_size': 100,
-                    'lr_decay': 0.1,
-                    'nepochs': 100,
-                    'continuity_coeff': -3,
-                    'bc_coeff': -5,
-                    'weight_decay': 1e-5,
-                    'rate_noise': 600}
+    train_params = {'learning_rate': args.lr,
+                    'momentum': args.momentum,
+                    'batch_size': args.bs,
+                    'lr_decay': args.lr_decay,
+                    'nepochs': args.epochs,
+                    'continuity_coeff': args.continuity_coeff,
+                    'bc_coeff': args.bc_coeff,
+                    'weight_decay': args.weight_decay,
+                    'rate_noise': args.rate_noise,
+                    'max_model_version': args.mvv}
 
     start = time.time()
-    launch_training(dataset_json,  'adam', params_dict, train_params,
+    launch_training(dataset_json, 'adam', params_dict, train_params,
                     checkpoint_fct = None)
 
     end = time.time()

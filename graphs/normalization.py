@@ -477,6 +477,7 @@ def normalize_dataset(data_folder, dataset_params,  output_dir):
     start = time.time()
     count = 0
     models = set()
+    prevbincount = -1
     for name in graphs_names:
         if '.grph' in name:
             bincount = 0
@@ -484,9 +485,12 @@ def normalize_dataset(data_folder, dataset_params,  output_dir):
                 if name[0:9] == name2[0:9]:
                     models.add(name[0:9])
                     bincount = bincount + 1
+            if prevbincount != -1 and bincount != prevbincount:
+                raise RuntimeError('Number of examples is not constant')
             print('Loading ' + str(count) + ': ' + name + ', bincount = ' + str(bincount))
             graphs[name] = load_graphs(data_folder + '/' + name)[0][0]
             count = count + 1
+            prevbincount = bincount
 
     end = time.time()
     elapsed_time = end - start
@@ -540,6 +544,8 @@ def normalize_dataset(data_folder, dataset_params,  output_dir):
     for name in graphs:
         dgl.save_graphs(output_dir + '/' + name, graphs[name])
 
+    dataset_params['augmented_graphs'] = bincount
+
     with open(output_dir + '/dataset_parameters.json', 'w') as outfile:
         json.dump(dataset_params, outfile, indent=4)
 
@@ -563,10 +569,7 @@ def normalize_dataset(data_folder, dataset_params,  output_dir):
 
 if __name__ == "__main__":
     dataset_params = {'normalization': 'standard',
-                      'label_normalization': 'min_max',
-                      'augment_data': 0,
-                      'add_noise': False,
-                      'noise_stdv': 1e-10}
+                      'label_normalization': 'min_max'}
 
     normalize_dataset(io.data_location() + 'graphs/', dataset_params,
                       io.data_location() + 'normalized_graphs/')

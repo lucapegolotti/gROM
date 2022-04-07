@@ -166,12 +166,13 @@ def set_bcs(graph, state_dict):
     per_node_type('outlet')
 
 class DGL_Dataset(DGLDataset):
-    def __init__(self, graphs = None, dataset_params = None, coefs_dict = None):
+    def __init__(self, graphs, dataset_params, coefs_dict, filenames):
         self.graphs = graphs
         self.dataset_params = dataset_params
         self.label_normalization = dataset_params['label_normalization']
         self.coefs_dict = coefs_dict
         self.set_times()
+        self.filenames = filenames
         super().__init__(name='dgl_dataset')
 
     def set_times(self):
@@ -187,6 +188,27 @@ class DGL_Dataset(DGLDataset):
                     maxi = np.max([maxi, int(key[9:])])
             times = np.arange(maxi + 1) * dt
             self.times.append(np.expand_dims(times,0))
+
+    def get_model_version(self, model_name):
+        model_name_sub = model_name[model_name.find('.')+1:]
+        model_name_v = model_name_sub[:model_name_sub.find('.')]
+        return int(model_name_v)
+
+    def set_max_model_version(self, max_model_version):
+        graphs_to_delete = []
+
+        numgraphs = len(self.graphs)
+        for igraph in range(numgraphs):
+            if self.get_model_version(self.filenames[igraph]) > max_model_version:
+                graphs_to_delete.append(igraph)
+
+        for index in sorted(graphs_to_delete, reverse=True):
+            del self.filenames[index]
+            del self.graphs[index]
+            del self.lightgraphs[index]
+            del self.times[index]
+            del self.noise_pressures[index]
+            del self.noise_flowrates[index]
 
     def i_to_graph_index(self, i):
         grph_index = 0
@@ -335,6 +357,7 @@ class DGL_Dataset(DGLDataset):
 
 def generate_dataset(model_names, normalized_data_dir, split, train = False):
     graphs = []
+    filenames = []
     start = time.time()
     for model in model_names:
         mv = 0
@@ -343,9 +366,8 @@ def generate_dataset(model_names, normalized_data_dir, split, train = False):
             if not exists(filename):
                 break
             else:
+                filenames.append(model + '.' + str(mv) + '.grph')
                 graphs.append(load_graphs(filename)[0][0])
-                if mv == 100:
-                    break
             if not train:
                 break
             mv = mv + 1
@@ -357,7 +379,7 @@ def generate_dataset(model_names, normalized_data_dir, split, train = False):
     dataset_params = json.load(open(normalized_data_dir + '/dataset_parameters.json'))
     dataset_params['split'] = split
 
-    return DGL_Dataset(graphs, dataset_params, coefs_dict)
+    return DGL_Dataset(graphs, dataset_params, coefs_dict, filenames)
 
 def prepare_dataset(dataset_json, nsets):
     def chunks(lst, n):
