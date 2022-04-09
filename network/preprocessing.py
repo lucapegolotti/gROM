@@ -194,12 +194,12 @@ class DGL_Dataset(DGLDataset):
         model_name_v = model_name_sub[:model_name_sub.find('.')]
         return int(model_name_v)
 
-    def set_max_model_version(self, max_model_version):
+    def set_number_model_copies(self, nmc):
         graphs_to_delete = []
 
         numgraphs = len(self.graphs)
         for igraph in range(numgraphs):
-            if self.get_model_version(self.filenames[igraph]) > max_model_version:
+            if self.get_model_version(self.filenames[igraph]) >= nmc:
                 graphs_to_delete.append(igraph)
 
         for index in sorted(graphs_to_delete, reverse=True):

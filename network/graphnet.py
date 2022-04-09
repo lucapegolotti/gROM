@@ -62,7 +62,7 @@ class GraphNet(Module):
                                         params['hl_mlp'],
                                         params['normalize'])
 
-        self.encoder_b2b_edges = MLP(params['infeat_edges'],
+        self.encoder_b2b_edges = MLP(4,
                                      params['latent_size_mlp'],
                                      params['latent_size_gnn'],
                                      params['hl_mlp'],
@@ -73,13 +73,13 @@ class GraphNet(Module):
                                           params['latent_size_gnn'],
                                           params['hl_mlp'],
                                           params['normalize'])
-        self.encoder_j2j_edges = MLP(params['infeat_edges'],
+        self.encoder_j2j_edges = MLP(4,
                                      params['latent_size_mlp'],
                                      params['latent_size_gnn'],
                                      params['hl_mlp'],
                                      params['normalize'])
 
-        self.encoder_b2j_edges = MLP(params['infeat_edges'],
+        self.encoder_b2j_edges = MLP(4,
                                      params['latent_size_mlp'],
                                      params['latent_size_gnn'],
                                      params['hl_mlp'],
@@ -112,13 +112,13 @@ class GraphNet(Module):
 
         self.output_branch = MLP(params['latent_size_gnn'],
                                  params['latent_size_mlp'],
-                                 params['out_size'],
+                                 2,
                                  params['hl_mlp'],
                                  False)
 
         self.output_junction = MLP(params['latent_size_gnn'],
                                    params['latent_size_mlp'],
-                                   params['out_size'],
+                                   2,
                                    params['hl_mlp'],
                                    False)
 

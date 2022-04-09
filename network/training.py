@@ -148,7 +148,7 @@ def train_gnn_model(gnn_model, optimizer_name, parameters,
 
     train_params = parameters['train_parameters']
     train_dataset = pickle.load(open(io.data_location() + 'datasets/d0/train.dts', 'rb'))
-    train_dataset.set_max_model_version(train_params['max_model_version'])
+    train_dataset.set_number_model_copies(train_params['n_copies_models'])
     train_dataset_rollout = pickle.load(open(io.data_location() + 'datasets/d0/train_not_augmented.dts', 'rb'))
     coefs_dict = train_dataset.coefs_dict
     dataset_params = train_dataset.dataset_params
@@ -454,7 +454,7 @@ if __name__ == "__main__":
     parser.add_argument('--ls_mlp', help='latent size mlps', type=int, default=64)
     parser.add_argument('--process_iterations', help='gnn layers', type=int, default=2)
     parser.add_argument('--hl_mlp', help='hidden layers mlps', type=int, default=1)
-    parser.add_argument('--mvv', help='max model version', type=int, default=0)
+    parser.add_argument('--nmc', help='copies per model', type=int, default=1)
 
     args = parser.parse_args()
 
@@ -475,7 +475,7 @@ if __name__ == "__main__":
                     'bc_coeff': args.bc_coeff,
                     'weight_decay': args.weight_decay,
                     'rate_noise': args.rate_noise,
-                    'max_model_version': args.mvv}
+                    'n_copies_models': args.nmc}
 
     start = time.time()
     launch_training(dataset_json, 'adam', params_dict, train_params,
