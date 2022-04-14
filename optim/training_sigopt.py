@@ -39,7 +39,8 @@ if __name__ == "__main__":
         continuity_coeff=-5,
         average_flowrate_training=0,
         weight_decay=1e-5,
-        bc_coeff=-5
+        bc_coeff=-5,
+        ncopies=4
     )
     network_params = {'infeat_nodes': 12,
                     'infeat_edges': 4,
@@ -58,7 +59,8 @@ if __name__ == "__main__":
                     'continuity_coeff': sigopt.params.continuity_coeff,
                     'bc_coeff': sigopt.params.bc_coeff,
                     'weight_decay': sigopt.params.weight_decay,
-                    'rate_noise': sigopt.params.rate_noise}
+                    'rate_noise': sigopt.params.rate_noise,
+                    'n_copies_models': sigopt.params.ncopies}
 
     start = time.time()
     gnn_model, history, dataset, \

@@ -68,14 +68,18 @@ def evaluate_model(gnn_model, train_dataloader, loss, metric = None,
         count = 0
         c_loss_global = 0
         for batched_graph in dataloader:
+            start = time.time()
             pred_branch, pred_junction = gnn_model(batched_graph, \
                                                    batched_graph.nodes['branch'].data['n_features'].float(), \
                                                    batched_graph.nodes['junction'].data['n_features'].float())
 
             pred_branch = pred_branch.squeeze()
             pred_junction = pred_junction.squeeze()
+            end = time.time()
+            # print('pred = {:.3f} s'.format(end - start))
 
             train_on_junctions = True
+            start = time.time()
 
             if train_on_junctions:
                 pred = torch.cat((pred_branch, pred_junction), 0)
@@ -96,6 +100,7 @@ def evaluate_model(gnn_model, train_dataloader, loss, metric = None,
                                                     pred_branch,
                                                     pred_junction,
                                                     label_coefs)
+
             except AttributeError:
                 if continuity_coeff > 1e-5:
                     c_loss = gnn_model.compute_continuity_loss(batched_graph, pred_branch, pred_junction, label_coefs, coefs_dict)
@@ -108,6 +113,10 @@ def evaluate_model(gnn_model, train_dataloader, loss, metric = None,
                                                     pred_junction,
                                                     label_coefs)
 
+            end = time.time()
+            # print('losses = {:.3f} s'.format(end - start))
+
+            start = time.time()
             loss_v = loss(pred, label)
             if continuity_coeff > 1e-5:
                 # real = gnn_model.compute_continuity_loss(batched_graph, batched_graph.nodes['inner'].data['n_labels'], label_coefs, coefs_dict)
@@ -125,10 +134,16 @@ def evaluate_model(gnn_model, train_dataloader, loss, metric = None,
 
                 global_metric = global_metric + metric_v.detach().numpy()
 
+            end = time.time()
+            # print('boh = {:.3f} s'.format(end - start))
+
+            start = time.time()
             if c_optimizer != None:
                optimizer.zero_grad()
                loss_v.backward()
                optimizer.step()
+            end = time.time()
+            # print('optimizer = {:.3f} s'.format(end - start))
             count = count + 1
 
         return {'global_loss': global_loss, 'count': count,
@@ -279,25 +294,26 @@ def train_gnn_model(gnn_model, optimizer_name, parameters,
                                           print_time = False)
 
                 error_branches_train = error_branches_train + \
-                                       np.sqrt(errors['p_branch']**2 + errors['q_branch']**2)
+                                       (errors['p_branch'] + errors['q_branch']) / errors['norm_t']
 
                 error_junctions_train = error_junctions_train + \
-                                        np.sqrt(errors['p_junction']**2 + errors['q_junction']**2)
+                                        (errors['p_junction'] + errors['q_junction']) / errors['norm_t']
 
                 error_global_train = error_global_train + \
-                                     np.sqrt(errors['p']**2 + errors['q']**2)
+                                     (errors['p'] + errors['q']) / errors['norm_t']
 
             error_branches_train = error_branches_train / nrollout
             error_junctions_train = error_junctions_train / nrollout
             error_global_train = error_global_train / nrollout
 
             history['train_rollout_error'][0].append(epoch)
-            history['train_rollout_error'][1].append(error_global_train)
+            history['train_rollout_error'][1].append(np.sqrt(error_global_train))
 
             msg = 'Rollout train: '
             msg = msg + 'rollout_error_branch = {:.5e} '.format(error_branches_train)
             msg = msg + 'rollout_error_junctions = {:.5e} '.format(error_junctions_train)
             msg = msg + 'rollout_error_global = {:.5e} '.format(error_global_train)
+            msg = msg + 'sqrt = {:.5e} '.format(np.sqrt(error_global_train))
 
             print(msg)
 
@@ -314,23 +330,26 @@ def train_gnn_model(gnn_model, optimizer_name, parameters,
                                           print_time = False)
 
                 error_branches_test = error_branches_test + \
-                                       np.sqrt(errors['p_branch']**2 + errors['q_branch']**2)
+                                      (errors['p_branch'] + errors['q_branch']) / errors['norm_t']
 
                 error_junctions_test = error_junctions_test + \
-                                        np.sqrt(errors['p_junction']**2 + errors['q_junction']**2)
+                                       (errors['p_junction'] + errors['q_junction']) / errors['norm_t']
 
                 error_global_test = error_global_test + \
-                                     np.sqrt(errors['p']**2 + errors['q']**2)
+                                    (errors['p'] + errors['q']) / errors['norm_t']
 
+            error_branches_test = error_branches_test / nrollout
+            error_junctions_test = error_junctions_test / nrollout
             error_global_test = error_global_test / nrollout
 
             history['test_rollout_error'][0].append(epoch)
-            history['test_rollout_error'][1].append(error_global_test)
+            history['test_rollout_error'][1].append(np.sqrt(error_global_test))
 
             msg = 'Rollout test: '
             msg = msg + 'rollout_error_branch = {:.5e} '.format(error_branches_test)
             msg = msg + 'rollout_error_junctions = {:.5e} '.format(error_junctions_test)
             msg = msg + 'rollout_error_global = {:.5e} '.format(error_global_test)
+            msg = msg + 'sqrt = {:.5e} '.format(np.sqrt(error_global_test))
 
             print(msg)
 
@@ -442,7 +461,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='gROM SimVascular Project.')
 
     parser.add_argument('--bs', help='batch size', type=int, default=100)
-    parser.add_argument('--epochs', help='total number of epochs', type=int, default=1)
+    parser.add_argument('--epochs', help='total number of epochs', type=int, default=200)
     parser.add_argument('--lr_decay', help='learning rate decay', type=float, default=0.1)
     parser.add_argument('--lr', help='learning rate', type=float, default=0.008)
     parser.add_argument('--rate_noise', help='rate noise', type=float, default=600)

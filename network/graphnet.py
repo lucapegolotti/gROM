@@ -9,6 +9,7 @@ import dgl.function as fn
 from torch.nn import Dropout
 import numpy as np
 import preprocessing as pp
+import time
 
 class MLP(Module):
     def __init__(self, in_feats, latent_space, out_feats, n_h_layers, normalize = True):
@@ -187,7 +188,7 @@ class GraphNet(Module):
 
     def process_nodes(self, nodes, processor):
         f1 = nodes.data['proc_node']
-        f2 = nodes.data['pe_sum']
+        f2 = nodes.data['pe_sum'] + nodes.data['pe_interaction']
         fin = nodes.data['inlet_info']
         fout = nodes.data['outlet_info']
         proc_node = processor(torch.cat((f1, f2, fin, fout), dim=1))
@@ -386,11 +387,11 @@ class GraphNet(Module):
 
             # compute junction-branch interactions
             g.apply_edges(pe_b2j, etype='branch_to_junction')
-            g.update_all(fn.copy_e('proc_edge', 'm'), fn.sum('m', 'pe_sum'),
+            g.update_all(fn.copy_e('proc_edge', 'm'), fn.sum('m', 'pe_interaction'),
                                    etype='branch_to_junction')
 
             g.apply_edges(pe_j2b, etype='junction_to_branch')
-            g.update_all(fn.copy_e('proc_edge', 'm'), fn.sum('m', 'pe_sum'),
+            g.update_all(fn.copy_e('proc_edge', 'm'), fn.sum('m', 'pe_interaction'),
                                    etype='junction_to_branch')
 
             # compute interactions in branches
@@ -404,7 +405,7 @@ class GraphNet(Module):
             g.apply_edges(pe_j2j, etype='junction_to_junction')
             # aggregate new edge features in nodes
             g.update_all(fn.copy_e('proc_edge', 'm'), fn.sum('m', 'pe_sum'),
-                                   etype='branch_to_branch')
+                                   etype='junction_to_junction')
             g.apply_nodes(pn_j, ntype='junction')
 
         g.apply_nodes(self.decode_branch, ntype='branch')

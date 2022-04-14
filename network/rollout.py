@@ -78,12 +78,9 @@ def rollout(gnn_model, params, dataset, index_graph, split, print_time = True):
     err_p_junction = 0
     err_q_junction = 0
 
+    norm_t = 0
     norm_p = 0
     norm_q = 0
-    norm_p_branch = 0
-    norm_q_branch = 0
-    norm_p_junction = 0
-    norm_q_junction = 0
     pred_states = [new_state]
     real_states = [new_state]
 
@@ -140,10 +137,14 @@ def rollout(gnn_model, params, dataset, index_graph, split, print_time = True):
 
         q_branch = dq_branch + prev_q
 
-        err_p_branch = err_p_branch + np.linalg.norm(p_branch - next_pressure_branch.detach().numpy().squeeze())**2
-        norm_p_branch = norm_p_branch + np.linalg.norm(next_pressure_branch.detach().numpy().squeeze())**2
-        err_q_branch = err_q_branch + np.linalg.norm(q_branch - next_flowrate_branch.detach().numpy().squeeze())**2
-        norm_q_branch = norm_q_branch + np.linalg.norm(next_flowrate_branch.detach().numpy().squeeze())**2
+        curr_err_p_branch = np.linalg.norm(p_branch - next_pressure_branch.detach().numpy().squeeze())**2
+        err_p_branch = err_p_branch + curr_err_p_branch
+        curr_norm_p_branch = np.linalg.norm(next_pressure_branch.detach().numpy().squeeze())**2
+        norm_t = norm_t + curr_norm_p_branch
+        curr_err_q_branch = np.linalg.norm(q_branch - next_flowrate_branch.detach().numpy().squeeze())**2
+        err_q_branch = err_q_branch + curr_err_q_branch
+        curr_norm_q_branch = np.linalg.norm(next_flowrate_branch.detach().numpy().squeeze())**2
+        norm_t = norm_t + curr_norm_q_branch
 
         dp_junction = bring_to_range_p(pred_junction[:,0].detach().numpy())
 
@@ -157,16 +158,17 @@ def rollout(gnn_model, params, dataset, index_graph, split, print_time = True):
 
         q_junction = dq_junction + prev_q
 
-        err_p_junction = err_p_junction + np.linalg.norm(p_junction - next_pressure_junction.detach().numpy().squeeze())**2
-        norm_p_junction = norm_p_junction + np.linalg.norm(next_pressure_junction.detach().numpy().squeeze())**2
-        err_q_junction = err_q_junction + np.linalg.norm(q_junction - next_flowrate_junction.detach().numpy().squeeze())**2
-        norm_q_junction = norm_q_junction + np.linalg.norm(next_flowrate_junction.detach().numpy().squeeze())**2
+        curr_err_p_junction = np.linalg.norm(p_junction - next_pressure_junction.detach().numpy().squeeze())**2
+        err_p_junction = err_p_junction + curr_err_p_junction
+        curr_norm_p_junction = np.linalg.norm(next_pressure_junction.detach().numpy().squeeze())**2
+        norm_t = norm_t + curr_norm_p_junction
+        curr_err_q_junction = np.linalg.norm(q_junction - next_flowrate_junction.detach().numpy().squeeze())**2
+        err_q_junction = err_q_junction + curr_err_q_junction
+        curr_norm_q_junction = np.linalg.norm(next_flowrate_junction.detach().numpy().squeeze())**2
+        norm_t = norm_t + curr_norm_q_junction
 
-        err_p = err_p + err_p_branch + err_p_junction
-        norm_p = norm_p + norm_p_branch + norm_p_junction
-
-        err_q = err_q + err_q_branch + err_q_junction
-        norm_q = norm_q + norm_q_branch + norm_q_junction
+        norm_p = curr_norm_p_branch + curr_norm_p_junction
+        norm_q = curr_norm_q_branch + curr_norm_q_junction
 
         pressure_dict_exact = {'branch': next_pressure_branch,
                                'junction': next_pressure_junction,
@@ -209,12 +211,14 @@ def rollout(gnn_model, params, dataset, index_graph, split, print_time = True):
         print('Rollout time = {:.2f} s for {:.0f} timesteps'.format(end - start,
                                                                     len(times)))
 
-    err_p_branch = np.sqrt(err_p_branch / norm_p_branch)
-    err_q_branch = np.sqrt(err_q_branch / norm_q_branch)
-    err_p_junction = np.sqrt(err_p_junction / norm_p_junction)
-    err_q_junction = np.sqrt(err_q_junction / norm_q_junction)
-    err_p = np.sqrt(err_p / norm_p)
-    err_q = np.sqrt(err_q / norm_q)
+    err_p = err_p_branch + err_p_junction
+    err_q = err_q_branch + err_q_junction
+    err_p_branch = err_p_branch
+    err_q_branch = err_q_branch
+    err_p_junction = err_p_junction
+    err_q_junction = err_q_junction
+    err_p = err_p
+    err_q = err_q
 
     errors = {'p_branch': err_p_branch,
               'q_branch': err_q_branch,
@@ -222,6 +226,9 @@ def rollout(gnn_model, params, dataset, index_graph, split, print_time = True):
               'q_junction': err_q_junction,
               'p': err_p,
               'q': err_q,
+              'norm_t': norm_t,
+              'norm_p': norm_p,
+              'norm_q': norm_q,
               'continuity': c_loss_total / total_flowrate}
 
     solutions = {'p_branch_real': pressures_branch_real,
