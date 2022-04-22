@@ -10,7 +10,7 @@ fi
 export EXPCODE=$1
 export NUMWORKERS=$2
 
-for (( i=0; i<=$NUMWORKERS; i++ ))
+for (( i=0; i<$NUMWORKERS; i++ ))
 do
-    ( sigopt start-worker $EXPCODE python training_sigopt.py 0111_0001 > $i.txt & )
+    ( sigopt start-worker $EXPCODE python training_sigopt.py > $i.txt & )
 done

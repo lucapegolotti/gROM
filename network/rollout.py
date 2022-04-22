@@ -120,7 +120,11 @@ def rollout(gnn_model, params, dataset, index_graph, split, print_time = True):
         pred_branch = pred_branch.squeeze()
         pred_junction = pred_junction.squeeze()
 
-        c_loss = gnn_model.compute_continuity_loss(graph, pred_branch, pred_junction, label_coefs, coefs_dict)
+        try:
+            c_loss = gnn_model.compute_continuity_loss(graph, pred_branch, pred_junction, label_coefs, coefs_dict)
+        except AttributeError:
+            c_loss = gnn_model.module.compute_continuity_loss(graph, pred_branch, pred_junction, label_coefs, coefs_dict)
+
         c_loss_total = c_loss_total + float(c_loss.detach().numpy())
         fr = float(true_graph.nodes['inlet'].data['flowrate_' + str(tp1)].detach().numpy())
         total_flowrate = total_flowrate + nrmz.invert_normalize_function(fr, 'flowrate', coefs_dict)
@@ -167,8 +171,8 @@ def rollout(gnn_model, params, dataset, index_graph, split, print_time = True):
         curr_norm_q_junction = np.linalg.norm(next_flowrate_junction.detach().numpy().squeeze())**2
         norm_t = norm_t + curr_norm_q_junction
 
-        norm_p = curr_norm_p_branch + curr_norm_p_junction
-        norm_q = curr_norm_q_branch + curr_norm_q_junction
+        norm_p = norm_p + curr_norm_p_branch + curr_norm_p_junction
+        norm_q = norm_q + curr_norm_q_branch + curr_norm_q_junction
 
         pressure_dict_exact = {'branch': next_pressure_branch,
                                'junction': next_pressure_junction,

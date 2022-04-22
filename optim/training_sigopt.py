@@ -30,7 +30,7 @@ if __name__ == "__main__":
         process_iterations=1,
         hl_mlp=2,
         normalize=1,
-        nepochs=30,
+        nepochs=100,
         batch_size=100,
         rate_noise=600,
         normalization='standard',
@@ -40,7 +40,7 @@ if __name__ == "__main__":
         average_flowrate_training=0,
         weight_decay=1e-5,
         bc_coeff=-5,
-        ncopies=4
+        ncopies=2
     )
     network_params = {'infeat_nodes': 12,
                     'infeat_edges': 4,

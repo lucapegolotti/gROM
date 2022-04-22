@@ -396,8 +396,7 @@ def launch_training(dataset_json, optimizer_name, params_dict,
     save_data = True
     # check if MPI is supported
     try:
-        gnn_model = torch.nn.parallel.DistributedDataParallel(gnn_model,
-                                                              find_unused_parameters=True)
+        gnn_model = torch.nn.parallel.DistributedDataParallel(gnn_model)
         save_data = (dist.get_rank() == 0)
     except RuntimeError:
         pass

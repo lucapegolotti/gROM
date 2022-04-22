@@ -85,15 +85,15 @@ def get_color_nodes(graph, cmap = cm.get_cmap("plasma")):
     return color_node
 
 def print_rollout_errors(errors):
-    print('Error pressure branches = {:.5e}'.format(errors['p_branch']))
-    print('Error flowrate branches = {:.5e}'.format(errors['q_branch']))
-    print('Global error branches = {:.5e}'.format(np.sqrt(errors['p_branch']**2 + errors['q_branch']**2)))
-    print('Error pressure junctions = {:.5e}'.format(errors['p_junction']))
-    print('Error flowrate junctions = {:.5e}'.format(errors['q_junction']))
-    print('Global error junctions = {:.5e}'.format(np.sqrt(errors['p_junction']**2 + errors['p_junction']**2)))
-    print('Error pressure = {:.5e}'.format(errors['p']))
-    print('Error flowrate = {:.5e}'.format(errors['q']))
-    print('Global error = {:.5e}'.format(np.sqrt(errors['p']**2 + errors['q']**2)))
+    print('Error pressure branches = {:.5e}'.format(np.sqrt(errors['p_branch']/errors['norm_p'])))
+    print('Error flowrate branches = {:.5e}'.format(np.sqrt(errors['q_branch']/errors['norm_q'])))
+    print('Global error branches = {:.5e}'.format(np.sqrt((errors['p_branch'] + errors['q_branch'])/errors['norm_t'])))
+    print('Error pressure junctions = {:.5e}'.format(np.sqrt(errors['p_junction']/errors['norm_p'])))
+    print('Error flowrate junctions = {:.5e}'.format(np.sqrt(errors['q_junction']/errors['norm_q'])))
+    print('Global error junctions = {:.5e}'.format(np.sqrt((errors['p_junction'] + errors['p_junction'])/errors['norm_t'])))
+    print('Error pressure = {:.5e}'.format(np.sqrt(errors['p']/errors['norm_p'])))
+    print('Error flowrate = {:.5e}'.format(np.sqrt(errors['q']/errors['norm_q'])))
+    print('Global error = {:.5e}'.format(np.sqrt((errors['p'] + errors['q'])/errors['norm_t'])))
     print('Relative flowrate loss = {:.5e}'.format(errors['continuity']))
 
 def plot_rollout(solutions, coefs_dict, graph, true_graph, out_folder):
@@ -137,6 +137,7 @@ def evaluate_all_models(dataset, split_name, gnn_model, params):
     print('==========' + split_name + '==========')
     tot_err_p_branch = 0
     tot_err_q_branch = 0
+    tot_err_global = 0
     tot_err_p_junction = 0
     tot_err_q_junction = 0
     tot_err_p = 0
@@ -158,12 +159,13 @@ def evaluate_all_models(dataset, split_name, gnn_model, params):
                      graph, true_graph,
                      out_folder = 'results_' + split_name + '/' + model_name)
 
-        tot_err_p_branch = tot_err_p_branch + errors['p_branch']
-        tot_err_q_branch = tot_err_q_branch + errors['q_branch']
-        tot_err_p_junction = tot_err_p_junction + errors['p_junction']
-        tot_err_q_junction = tot_err_q_junction + errors['q_junction']
-        tot_err_p = tot_err_p + errors['p']
-        tot_err_q = tot_err_q + errors['q']
+        tot_err_p_branch = tot_err_p_branch + np.sqrt(errors['p_branch'] / errors['norm_p'])
+        tot_err_q_branch = tot_err_q_branch + np.sqrt(errors['q_branch'] / errors['norm_q'])
+        tot_err_p_junction = tot_err_p_junction + np.sqrt(errors['p_junction'] / errors['norm_p'])
+        tot_err_q_junction = tot_err_q_junction + np.sqrt(errors['q_junction'] / errors['norm_q'])
+        tot_err_p = tot_err_p + np.sqrt(errors['p'] / errors['norm_p'])
+        tot_err_q = tot_err_q + np.sqrt(errors['q'] / errors['norm_q'])
+        tot_err_global = tot_err_global + np.sqrt((errors['p'] + errors['q']) / errors['norm_t'])
         tot_continuity = tot_continuity + errors['continuity']
 
     print('----------------------------')
@@ -174,6 +176,7 @@ def evaluate_all_models(dataset, split_name, gnn_model, params):
     print('Error flowrate junction = ' + str(tot_err_q_junction / num_examples))
     print('Error pressure = ' + str(tot_err_p / num_examples))
     print('Error flowrate = ' + str(tot_err_q / num_examples))
+    print('Error global = ' + str(tot_err_global / num_examples))
     print('Error continuity = ' + str(tot_continuity / num_examples))
 
 def check_loss(gnn_model, dataset, loss, parameters):
