@@ -113,6 +113,13 @@ def plot_rollout(solutions, coefs_dict, graph, true_graph, out_folder):
 
     bounds = {'pressure': p_bounds, 'flowrate': q_bounds}
 
+    ptools.plot_2D_surface(pressures_branch_pred, flowrates_branch_pred,
+                           pressures_junction_pred, flowrates_junction_pred,
+                           pressures_branch_real, flowrates_branch_real,
+                           pressures_junction_real, flowrates_junction_real,
+                           nrmz.get_actual_times(true_graph, coefs_dict),
+                           coefs_dict, bounds, out_folder)
+
     ptools.plot_static(graph, pressures_branch_pred, flowrates_branch_pred,
                        pressures_branch_real, flowrates_branch_real,
                        nrmz.get_actual_times(true_graph, coefs_dict),

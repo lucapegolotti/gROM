@@ -14,6 +14,7 @@ import preprocessing as pp
 import matplotlib.cm as cm
 import random
 import normalization as nrmz
+from matplotlib.colors import LightSource
 
 def circle3D(center, normal, radius, npoints):
     theta = np.linspace(0, 2 * np.pi, npoints)
@@ -319,7 +320,7 @@ def plot_linear(pressures_branch_pred, flowrates_branch_pred,
     nodesidxs = np.expand_dims(np.arange(nnodes),axis=1)
     ax[1].set_xlabel('graph node index')
     ax[0].set_ylabel('pressure [mmHg]')
-    ax[1].set_ylabel('flowrate [cc^3/s]')
+    ax[1].set_ylabel('flowrate [cm^3/s]')
     def animation_frame(i):
         dp = nrmz.invert_normalize_function(pressures_pred[i],'pressure',coefs_dict) / 1333.2
         dp = np.concatenate((nodesidxs, dp),axis = 1)
@@ -441,7 +442,7 @@ def plot_static(graph, pressures_branch_pred, flowrates_branch_pred,
 
     ax.set_xlim(times[0],times[-1])
     ax.set_xlabel('time [s]')
-    ax.set_ylabel('flowrate [cc^3/s]')
+    ax.set_ylabel('flowrate [cm^3/s]')
     plt.savefig(outdir + '/flowrate_vs_time.png')
 
     fig = plt.figure()
@@ -479,6 +480,131 @@ def plot_static(graph, pressures_branch_pred, flowrates_branch_pred,
     ax.set_zlim((minx[2],maxx[2]))
 
     plt.savefig(outdir + '/static_3D.png')
+
+def plot_2D_surface(pressures_branch_pred, flowrates_branch_pred,
+                    pressures_junction_pred, flowrates_junction_pred,
+                    pressures_branch_real, flowrates_branch_real,
+                    pressures_junction_real, flowrates_junction_real,
+                    times, coefs_dict, bounds, outdir):
+
+    nnodes = len(pressures_branch_pred[0]) + \
+             len(pressures_junction_pred[0])
+    X, Y = np.meshgrid(np.arange(nnodes), np.array(times))
+
+    # pressure
+    figp = plt.figure(figsize=(14, 4), dpi=120)
+    ax1p = figp.add_subplot(1, 3, 1, projection='3d')
+    ax2p = figp.add_subplot(1, 3, 2, projection='3d')
+    ax3p = figp.add_subplot(1, 3, 3, projection='3d')
+
+    Z = np.zeros((nnodes, len(times)))
+    Zreal = np.zeros((nnodes, len(times)))
+
+    for i in range(len(times)):
+        Z[:,i] = np.squeeze(np.concatenate((pressures_branch_pred[i],
+                                 pressures_junction_pred[i]), axis = 0))
+
+        Zreal[:,i] = np.squeeze(np.concatenate((pressures_branch_real[i],
+                                 pressures_junction_real[i]), axis = 0))
+
+        Z[:,i] = nrmz.invert_normalize_function(Z[:,i], 'pressure',coefs_dict) / 1333.2
+
+        Zreal[:,i] = nrmz.invert_normalize_function(Zreal[:,i], 'pressure',coefs_dict) / 1333.2
+
+    Zerror = np.abs(Z - Zreal)
+
+    surf = ax1p.plot_surface(X, Y, Z.transpose(), cmap=cm.jet,
+                           rstride=1, cstride=1,
+                           linewidth=0, antialiased=False, alpha=0.2)
+
+    surf_real = ax2p.plot_surface(X, Y, Zreal.transpose(), cmap=cm.jet,
+                                rstride=1, cstride=1,
+                                linewidth=0, antialiased=False, alpha=0.2)
+
+    surf_error = ax3p.plot_surface(X, Y, Zerror.transpose(), cmap=cm.jet,
+                                  rstride=1, cstride=1,
+                                  linewidth=0, antialiased=False, alpha=0.2)
+
+
+    ax1p.set_xlabel('nodes indices')
+    ax1p.set_ylabel('time [s]')
+    ax1p.set_zlabel('pressure [mmHg]', rotation=180)
+    ax1p.view_init(30, 35)
+    ax1p.set_title('GNN prediction')
+    ax1p.invert_xaxis()
+
+    ax2p.set_xlabel('nodes indices')
+    ax2p.set_ylabel('time [s]')
+    ax2p.set_zlabel('pressure [mmHg]', rotation=180)
+    ax2p.view_init(30, 35)
+    ax2p.set_title('Ground truth')
+    ax2p.invert_xaxis()
+
+    ax3p.set_xlabel('nodes indices')
+    ax3p.set_ylabel('time [s]')
+    ax3p.set_zlabel('absolute pressure error [mmHg]', rotation=180)
+    ax3p.view_init(30, 35)
+    ax3p.set_title('Error')
+    ax3p.invert_xaxis()
+
+    plt.savefig(outdir + '/pressure_surface_2D.png')
+
+    # flowrate
+    figq = plt.figure(figsize=(14, 4), dpi=120)
+    ax1q = figq.add_subplot(1, 3, 1, projection='3d')
+    ax2q = figq.add_subplot(1, 3, 2, projection='3d')
+    ax3q = figq.add_subplot(1, 3, 3, projection='3d')
+
+    Z = np.zeros((nnodes, len(times)))
+    Zreal = np.zeros((nnodes, len(times)))
+
+    for i in range(len(times)):
+        Z[:,i] = np.squeeze(np.concatenate((flowrates_branch_pred[i],
+                                 flowrates_junction_pred[i]), axis = 0))
+
+        Zreal[:,i] = np.squeeze(np.concatenate((flowrates_branch_real[i],
+                                 flowrates_junction_real[i]), axis = 0))
+
+        Z[:,i] = nrmz.invert_normalize_function(Z[:,i], 'flowrate',coefs_dict)
+
+        Zreal[:,i] = nrmz.invert_normalize_function(Zreal[:,i], 'flowrate',coefs_dict)
+
+    Zerror = np.abs(Z - Zreal)
+
+    surf = ax1q.plot_surface(X, Y, Z.transpose(), cmap=cm.jet,
+                           rstride=1, cstride=1,
+                           linewidth=0, antialiased=False, alpha=0.2)
+
+    surf_real = ax2q.plot_surface(X, Y, Zreal.transpose(), cmap=cm.jet,
+                                rstride=1, cstride=1,
+                                linewidth=0, antialiased=False, alpha=0.2)
+
+    surf_error = ax3q.plot_surface(X, Y, Zerror.transpose(), cmap=cm.jet,
+                                  rstride=1, cstride=1,
+                                  linewidth=0, antialiased=False, alpha=0.2)
+
+    ax1q.set_xlabel('nodes indices')
+    ax1q.set_ylabel('time [s]')
+    ax1q.set_zlabel('flowrate [cm^3/s]', rotation=180)
+    ax1q.view_init(30, 35)
+    ax1q.set_title('GNN prediction')
+    ax1q.invert_xaxis()
+
+    ax2q.set_xlabel('nodes indices')
+    ax2q.set_ylabel('time [s]')
+    ax2q.set_zlabel('flowrate [cm^3/s]', rotation=180)
+    ax2q.view_init(30, 35)
+    ax2q.set_title('Ground truth')
+    ax2q.invert_xaxis()
+
+    ax3q.set_xlabel('nodes indices')
+    ax3q.set_ylabel('time [s]')
+    ax3q.set_zlabel('absolute flowrate error [cm^3/s]', rotation=180)
+    ax3q.view_init(30, 35)
+    ax3q.set_title('Error')
+    ax3q.invert_xaxis()
+
+    plt.savefig(outdir + '/flowrate_surface_2D.png')
 
 def plot_history(history_train, history_validation, label, folder):
     fig = plt.figure()
