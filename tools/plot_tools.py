@@ -620,11 +620,3 @@ def plot_history(history_train, history_validation, label, folder):
     ax.set_yscale('log')
 
     plt.savefig(folder + '/' + label + '.png')
-
-
-if __name__ == "__main__":
-    model_name = '0091_0001'
-    print('Create geometry: ' + model_name)
-    graphs = pp.load_graphs('../graphs/data/' + model_name + '.grph')[0]
-    plot_geo_with_circles(graphs[0])
-    plt.show()
