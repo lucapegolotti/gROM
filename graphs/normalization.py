@@ -482,10 +482,13 @@ def normalize_dataset(data_folder, dataset_params,  output_dir):
         if '.grph' in name:
             bincount = 0
             for name2 in graphs_names:
-                if name[0:9] == name2[0:9]:
-                    models.add(name[0:9])
+                p1 = name.find('.')
+                p2 = name2.find('.')
+                if name[0:p1] == name2[0:p2]:
+                    models.add(name[0:p1])
                     bincount = bincount + 1
             if prevbincount != -1 and bincount != prevbincount:
+                print(name)
                 raise RuntimeError('Number of examples is not constant')
             print('Loading ' + str(count) + ': ' + name + ', bincount = ' + str(bincount))
             graphs[name] = load_graphs(data_folder + '/' + name)[0][0]
