@@ -291,15 +291,16 @@ class DGL_Dataset(DGLDataset):
         elapsed_time = end - start
         print('\tDGLDataset generated in {:0.2f} s'.format(elapsed_time))
 
-    def sample_noise(self, rate):
+    def sample_noise(self, rate_p, rate_q):
         ngraphs = len(self.noise_pressures)
         for igraph in range(ngraphs):
             dt = float(self.graphs[igraph].nodes['branch'].data['dt'][0])
             dt = nrmz.invert_normalize_function(dt, 'dt', self.coefs_dict)
-            actual_rate = rate * dt
+            actual_rate_p = rate_p * dt
+            actual_rate_q = rate_q * dt
             nnodes = self.noise_pressures[igraph].shape[0]
-            self.noise_pressures[igraph] = np.random.normal(0, actual_rate, (nnodes, self.times[igraph].shape[1]))
-            self.noise_flowrates[igraph] = np.random.normal(0, actual_rate, (nnodes, self.times[igraph].shape[1]))
+            self.noise_pressures[igraph] = np.random.normal(0, actual_rate_p, (nnodes, self.times[igraph].shape[1]))
+            self.noise_flowrates[igraph] = np.random.normal(0, actual_rate_q, (nnodes, self.times[igraph].shape[1]))
             # this would be brownian noise
             # for index in range(1,self.times[igraph].shape[1]-1):
             #     self.noise_pressures[igraph][:,index] = np.random.normal(0, actual_rate, (nnodes)) + self.noise_pressures[igraph][:,index-1]
@@ -381,9 +382,9 @@ def generate_dataset(model_names, normalized_data_dir, split, train = False):
 
     return DGL_Dataset(graphs, dataset_params, coefs_dict, filenames)
 
-def prepare_dataset(dataset_json, nsets):
+def prepare_dataset(dataset_json, divs):
     def chunks(lst, n):
-        n = int(np.floor(len(lst)/nsets))
+        n = int(np.floor(len(lst)/n))
         for i in range(0, len(lst), n):
             yield lst[i:i + n]
 
@@ -396,11 +397,12 @@ def prepare_dataset(dataset_json, nsets):
     random.seed(10)
     random.shuffle(dataset)
 
-    sets = list(chunks(dataset, nsets))
+    sets = list(chunks(dataset, divs))
+    nsets = len(sets)
 
     datasets = []
 
-    for i in range(nsets):
+    for i in range(1):
         newdata = {'test': sets[i]}
         train_s = []
         for j in range(nsets):
@@ -415,8 +417,9 @@ if __name__ == "__main__":
     dataset_dir = io.data_location() + 'datasets/'
     dataset_json = json.load(open(io.data_location() + 'normalized_graphs/dataset_list.json'))
 
-    nsets = 10
-    datasets_models = prepare_dataset(dataset_json, nsets = 10)
+    # suggested number of sets. Actual number of sets might be larger
+    divs = 10
+    datasets_models = prepare_dataset(dataset_json, divs = divs)
 
     pathlib.Path(dataset_dir).mkdir(parents=True, exist_ok=True)
 

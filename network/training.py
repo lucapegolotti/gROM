@@ -258,8 +258,10 @@ def train_gnn_model(gnn_model, optimizer_name, parameters,
     history['test_rollout_error'] = [[],[]]
 
     for epoch in range(nepochs):
-        train_dataset.sample_noise(parameters['train_parameters']['rate_noise'])
-        test_dataset.sample_noise(parameters['train_parameters']['rate_noise'])
+        train_dataset.sample_noise(parameters['train_parameters']['rate_noise_p'],
+                                   parameters['train_parameters']['rate_noise_q'])
+        test_dataset.sample_noise(parameters['train_parameters']['rate_noise_p'],
+                                  parameters['train_parameters']['rate_noise_q'])
 
         train_results, val_results, elapsed = evaluate_model(gnn_model, train_dataloader,
                                                              mse, weighted_mae, optimizer,
@@ -463,7 +465,8 @@ if __name__ == "__main__":
     parser.add_argument('--epochs', help='total number of epochs', type=int, default=200)
     parser.add_argument('--lr_decay', help='learning rate decay', type=float, default=0.1)
     parser.add_argument('--lr', help='learning rate', type=float, default=0.008)
-    parser.add_argument('--rate_noise', help='rate noise', type=float, default=600)
+    parser.add_argument('--rate_noise_p', help='rate noise pressure', type=float, default=600)
+    parser.add_argument('--rate_noise_q', help='rate noise flowrate', type=float, default=600)
     parser.add_argument('--continuity_coeff', help='continuity coefficient', type=int, default=-3)
     parser.add_argument('--bc_coeff', help='boundary conditions coefficient', type=int, default=-5)
     parser.add_argument('--momentum', help='momentum', type=float, default=0)
@@ -492,7 +495,8 @@ if __name__ == "__main__":
                     'continuity_coeff': args.continuity_coeff,
                     'bc_coeff': args.bc_coeff,
                     'weight_decay': args.weight_decay,
-                    'rate_noise': args.rate_noise,
+                    'rate_noise_p': args.rate_noise_p,
+                    'rate_noise_q': args.rate_noise_q,
                     'n_copies_models': args.nmc}
 
     start = time.time()
