@@ -167,7 +167,7 @@ def set_field(graph, name_field, field):
         masked_field = torch.from_numpy(field[mask].astype(DTYPE))
         graph.nodes[node_type].data[name_field] = masked_field
     set_in_node('branch')
-    set_in_node('junction')
+    # set_in_node('junction')
     set_in_node('inlet')
     set_in_node('outlet')
 

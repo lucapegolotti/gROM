@@ -26,12 +26,14 @@ import io_utils as io
 
 def set_state(graph, state_dict, next_state_dict = None, noise_dict = None, coefs_label = None):
     def per_node_type(node_type):
-        graph.nodes[node_type].data['pressure'] = state_dict['pressure'][node_type]
-        graph.nodes[node_type].data['flowrate'] = state_dict['flowrate'][node_type]
+        if node_type != 'junction':
+            graph.nodes[node_type].data['pressure'] = state_dict['pressure'][node_type]
+            graph.nodes[node_type].data['flowrate'] = state_dict['flowrate'][node_type]
 
         if next_state_dict != None:
-            graph.nodes[node_type].data['pressure_next'] = next_state_dict['pressure'][node_type]
-            graph.nodes[node_type].data['flowrate_next'] = next_state_dict['flowrate'][node_type]
+            if node_type != 'junction':
+                graph.nodes[node_type].data['pressure_next'] = next_state_dict['pressure'][node_type]
+                graph.nodes[node_type].data['flowrate_next'] = next_state_dict['flowrate'][node_type]
             if noise_dict == None:
                 graph.nodes[node_type].data['n_labels'] = torch.cat((graph.nodes[node_type].data['pressure_next'] - \
                                                                      graph.nodes[node_type].data['pressure'], \
@@ -39,7 +41,7 @@ def set_state(graph, state_dict, next_state_dict = None, noise_dict = None, coef
                                                                      graph.nodes[node_type].data['flowrate']), 1).float()
 
             else:
-                if node_type == 'branch' or node_type == 'junction':
+                if node_type == 'branch':
                     graph.nodes[node_type].data['n_labels'] = torch.cat((graph.nodes[node_type].data['pressure_next'] - \
                                                                          graph.nodes[node_type].data['pressure'] - \
                                                                          noise_dict['pressure'][node_type], \
@@ -48,7 +50,7 @@ def set_state(graph, state_dict, next_state_dict = None, noise_dict = None, coef
                                                                          noise_dict['flowrate'][node_type]), 1).float()
 
 
-        if (node_type == 'branch' or node_type == 'junction') and coefs_label != None:
+        if node_type == 'branch' and coefs_label != None:
             nlabels = graph.nodes[node_type].data['n_labels'].shape[1]
             for i in range(nlabels):
                 colmn = graph.nodes[node_type].data['n_labels'][:,i]
@@ -75,18 +77,8 @@ def set_state(graph, state_dict, next_state_dict = None, noise_dict = None, coef
                                                                        graph.nodes[node_type].data['area'], \
                                                                        graph.nodes[node_type].data['tangent']), 1).float()
         elif node_type == 'junction':
-            if noise_dict == None:
-                graph.nodes[node_type].data['n_features'] = torch.cat((graph.nodes[node_type].data['pressure'], \
-                                                                       graph.nodes[node_type].data['flowrate'], \
-                                                                       graph.nodes[node_type].data['area'], \
-                                                                       graph.nodes[node_type].data['tangent']), 1).float()
-            else:
-                graph.nodes[node_type].data['n_features'] = torch.cat((graph.nodes[node_type].data['pressure'] + \
-                                                                       noise_dict['pressure'][node_type], \
-                                                                       graph.nodes[node_type].data['flowrate'] + \
-                                                                       noise_dict['flowrate'][node_type], \
-                                                                       graph.nodes[node_type].data['area'], \
-                                                                       graph.nodes[node_type].data['tangent']), 1).float()
+            graph.nodes[node_type].data['n_features'] = torch.cat((graph.nodes[node_type].data['area'], \
+                                                                   graph.nodes[node_type].data['tangent']), 1).float()
         # These would be physical bcs but they work worse
         # elif node_type == 'inlet':
         #     if noise_dict == None:
@@ -250,7 +242,7 @@ class DGL_Dataset(DGLDataset):
             self.lightgraphs.append(lightgraph)
 
             nbranch_nodes = self.graphs[igraph].nodes['branch'].data['pressure_0'].shape[0]
-            njunction_nodes = self.graphs[igraph].nodes['junction'].data['pressure_0'].shape[0]
+            njunction_nodes = self.graphs[igraph].nodes['junction'].data['area'].shape[0]
             nnodes = nbranch_nodes + njunction_nodes
             noise_pressure = np.zeros((nnodes,self.times[igraph].shape[1]))
             noise_flowrate = np.zeros((nnodes,self.times[igraph].shape[1]))
@@ -265,8 +257,8 @@ class DGL_Dataset(DGLDataset):
                     all_labels = curlabels
                 else:
                     all_labels = torch.cat((all_labels, curlabels), axis = 0)
-                curlabels = self.lightgraphs[igraph].nodes['junction'].data['n_labels']
-                all_labels = torch.cat((all_labels, curlabels), axis = 0)
+                # curlabels = self.lightgraphs[igraph].nodes['junction'].data['n_labels']
+                # all_labels = torch.cat((all_labels, curlabels), axis = 0)
             all_labels = all_labels.detach().numpy()
             sumsquared = np.sum(all_labels**2, axis=0)
             sumx = np.sum(all_labels, axis=0)
@@ -308,11 +300,9 @@ class DGL_Dataset(DGLDataset):
 
     def get_state_dict(self, gindex, tindex):
         pressure_dict = {'branch': self.graphs[gindex].nodes['branch'].data['pressure_' + str(tindex)],
-                         'junction': self.graphs[gindex].nodes['junction'].data['pressure_' + str(tindex)],
                          'inlet': self.graphs[gindex].nodes['inlet'].data['pressure_' + str(tindex)],
                          'outlet': self.graphs[gindex].nodes['outlet'].data['pressure_' + str(tindex)]}
         flowrate_dict = {'branch': self.graphs[gindex].nodes['branch'].data['flowrate_' + str(tindex)],
-                         'junction': self.graphs[gindex].nodes['junction'].data['flowrate_' + str(tindex)],
                          'inlet': self.graphs[gindex].nodes['inlet'].data['flowrate_' + str(tindex)],
                          'outlet': self.graphs[gindex].nodes['outlet'].data['flowrate_' + str(tindex)]}
         return {'pressure': pressure_dict, 'flowrate': flowrate_dict}
@@ -326,12 +316,10 @@ class DGL_Dataset(DGLDataset):
         mo = self.graphs[gindex].nodes['outlet'].data['mask']
 
         pressure_noise_dict = {'branch': torch.from_numpy(np.expand_dims(self.noise_pressures[gindex][mb,tindex],1)),
-                               'junction': torch.from_numpy(np.expand_dims(self.noise_pressures[gindex][mj,tindex],1)),
                                'inlet': torch.from_numpy(self.noise_pressures[gindex][mi,tindex]),
                                'outlet': torch.from_numpy(np.expand_dims(self.noise_pressures[gindex][mo,tindex],1))}
 
         flowrate_noise_dict = {'branch': torch.from_numpy(np.expand_dims(self.noise_flowrates[gindex][mb,tindex],1)),
-                               'junction': torch.from_numpy(np.expand_dims(self.noise_flowrates[gindex][mj,tindex],1)),
                                'inlet': torch.from_numpy(self.noise_flowrates[gindex][mi,tindex]),
                                'outlet': torch.from_numpy(np.expand_dims(self.noise_flowrates[gindex][mo,tindex],1))}
 

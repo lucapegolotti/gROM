@@ -78,7 +78,7 @@ def evaluate_model(gnn_model, train_dataloader, loss, metric = None,
             end = time.time()
             # print('pred = {:.3f} s'.format(end - start))
 
-            train_on_junctions = True
+            train_on_junctions = False
             start = time.time()
 
             if train_on_junctions:
@@ -298,14 +298,11 @@ def train_gnn_model(gnn_model, optimizer_name, parameters,
                 error_branches_train = error_branches_train + \
                                        (errors['p_branch'] + errors['q_branch']) / errors['norm_t']
 
-                error_junctions_train = error_junctions_train + \
-                                        (errors['p_junction'] + errors['q_junction']) / errors['norm_t']
 
                 error_global_train = error_global_train + \
                                      (errors['p'] + errors['q']) / errors['norm_t']
 
             error_branches_train = error_branches_train / nrollout
-            error_junctions_train = error_junctions_train / nrollout
             error_global_train = error_global_train / nrollout
 
             history['train_rollout_error'][0].append(epoch)
@@ -313,7 +310,6 @@ def train_gnn_model(gnn_model, optimizer_name, parameters,
 
             msg = 'Rollout train: '
             msg = msg + 'rollout_error_branch = {:.5e} '.format(error_branches_train)
-            msg = msg + 'rollout_error_junctions = {:.5e} '.format(error_junctions_train)
             msg = msg + 'rollout_error_global = {:.5e} '.format(error_global_train)
             msg = msg + 'sqrt = {:.5e} '.format(np.sqrt(error_global_train))
 
@@ -334,9 +330,6 @@ def train_gnn_model(gnn_model, optimizer_name, parameters,
                 error_branches_test = error_branches_test + \
                                       (errors['p_branch'] + errors['q_branch']) / errors['norm_t']
 
-                error_junctions_test = error_junctions_test + \
-                                       (errors['p_junction'] + errors['q_junction']) / errors['norm_t']
-
                 error_global_test = error_global_test + \
                                     (errors['p'] + errors['q']) / errors['norm_t']
 
@@ -349,7 +342,6 @@ def train_gnn_model(gnn_model, optimizer_name, parameters,
 
             msg = 'Rollout test: '
             msg = msg + 'rollout_error_branch = {:.5e} '.format(error_branches_test)
-            msg = msg + 'rollout_error_junctions = {:.5e} '.format(error_junctions_test)
             msg = msg + 'rollout_error_global = {:.5e} '.format(error_global_test)
             msg = msg + 'sqrt = {:.5e} '.format(np.sqrt(error_global_test))
 
@@ -462,7 +454,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='gROM SimVascular Project.')
 
     parser.add_argument('--bs', help='batch size', type=int, default=100)
-    parser.add_argument('--epochs', help='total number of epochs', type=int, default=200)
+    parser.add_argument('--epochs', help='total number of epochs', type=int, default=10)
     parser.add_argument('--lr_decay', help='learning rate decay', type=float, default=0.1)
     parser.add_argument('--lr', help='learning rate', type=float, default=0.008)
     parser.add_argument('--rate_noise_p', help='rate noise pressure', type=float, default=600)
