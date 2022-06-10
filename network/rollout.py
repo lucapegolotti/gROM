@@ -112,7 +112,7 @@ def rollout(gnn_model, params, dataset, index_graph, split, print_time = True):
         pp.set_bcs(graph, new_bcs)
         pp.set_state(graph, new_state)
 
-        average_flowrate = True
+        average_flowrate = False
         pred_branch, pred_junction = gnn_model(graph, graph.nodes['branch'].data['n_features'].float(),
                                                graph.nodes['junction'].data['n_features'].float(),
                                                average_flowrate=average_flowrate)

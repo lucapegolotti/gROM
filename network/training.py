@@ -265,7 +265,7 @@ def train_gnn_model(gnn_model, optimizer_name, parameters,
 
         train_results, val_results, elapsed = evaluate_model(gnn_model, train_dataloader,
                                                              mse, weighted_mae, optimizer,
-                                                             test_dataloader = test_dataloader,
+                                                             test_dataloader = None,
                                                              continuity_coeff = 10**train_params['continuity_coeff'],
                                                              bc_coeff = 10**train_params['bc_coeff'])
 
@@ -273,9 +273,9 @@ def train_gnn_model(gnn_model, optimizer_name, parameters,
         msg = msg + 'train_loss = {:.2e} '.format(train_results['global_loss']/train_results['count'])
         msg = msg + 'train_mae = {:.2e} '.format(train_results['global_metric']/train_results['count'])
         msg = msg + 'train_con_loss = {:.2e} '.format(train_results['continuity_loss']/train_results['count'])
-        msg = msg + 'val_loss = {:.2e} '.format(val_results['global_loss']/val_results['count'])
-        msg = msg + 'val_mae = {:.2e} '.format(val_results['global_metric']/val_results['count'])
-        msg = msg + 'val_con_loss = {:.2e} '.format(val_results['continuity_loss']/val_results['count'])
+        # msg = msg + 'val_loss = {:.2e} '.format(val_results['global_loss']/val_results['count'])
+        # msg = msg + 'val_mae = {:.2e} '.format(val_results['global_metric']/val_results['count'])
+        # msg = msg + 'val_con_loss = {:.2e} '.format(val_results['continuity_loss']/val_results['count'])
         msg = msg + 'time = {:.2f} s'.format(elapsed)
 
         print(msg, flush=True)
@@ -367,10 +367,10 @@ def train_gnn_model(gnn_model, optimizer_name, parameters,
         history['train_loss'][1].append(train_results['global_loss']/train_results['count'])
         history['train_metric'][0].append(epoch)
         history['train_metric'][1].append(train_results['global_metric']/train_results['count'])
-        history['test_loss'][0].append(epoch)
-        history['test_loss'][1].append(val_results['global_loss']/val_results['count'])
-        history['test_metric'][0].append(epoch)
-        history['test_metric'][1].append(val_results['global_metric']/val_results['count'])
+        # history['test_loss'][0].append(epoch)
+        # history['test_loss'][1].append(val_results['global_loss']/val_results['count'])
+        # history['test_metric'][0].append(epoch)
+        # history['test_metric'][1].append(val_results['global_metric']/val_results['count'])
 
         if checkpoint_fct != None:
             if epoch in chckp_epochs:
@@ -462,7 +462,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='gROM SimVascular Project.')
 
     parser.add_argument('--bs', help='batch size', type=int, default=100)
-    parser.add_argument('--epochs', help='total number of epochs', type=int, default=200)
+    parser.add_argument('--epochs', help='total number of epochs', type=int, default=1000)
     parser.add_argument('--lr_decay', help='learning rate decay', type=float, default=0.1)
     parser.add_argument('--lr', help='learning rate', type=float, default=0.008)
     parser.add_argument('--rate_noise_p', help='rate noise pressure', type=float, default=600)

@@ -359,10 +359,13 @@ if __name__ == "__main__":
 
     timesteps = json.load(open(input_dir + '/timesteps.json'))
     for model in params:
-        params[model]['timestep'] = timesteps[model]
+        tmodel = model
+        if model[-1] == '_':
+            tmodel = model[:-1]
+        params[model]['timestep'] = timesteps[tmodel]
 
     failed_models = []
-    n_graphs_per_model = 10
+    n_graphs_per_model = 5
     for model in params:
         print('Processing {}'.format(model))
         success = generate_graphs(model, params[model], input_dir, output_dir,
