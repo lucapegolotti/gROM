@@ -335,8 +335,8 @@ def compute_statistics(graphs, fields, coefs_dict):
             N = N + gN
 
             # basic correctness check
-            if field in ['pressure', 'area'] and gmin < 0:
-                print(field + ' can not be negative! Model ' + str(count))
+            # if field in ['pressure', 'area'] and gmin < 0:
+            #     print(field + ' can not be negative! Model ' + str(count))
             count = count + 1
 
         cmean = sumv / N

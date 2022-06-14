@@ -82,9 +82,11 @@ def gather_pressures_flowrates(arrays):
     for array in arrays:
         if array[0:8] == 'pressure':
             time = float(array[9:])
-            pressures[time] = arrays[array]
-        if array[0:8] == 'velocity':
-            time = float(array[9:])
-            velocities[time] = arrays[array]
+            if time > 1e-12:
+                pressures[time] = arrays[array]
+        if array[0:4] == 'flow':
+            time = float(array[5:])
+            if time > 1e-12:
+                velocities[time] = arrays[array]
 
     return pressures, velocities

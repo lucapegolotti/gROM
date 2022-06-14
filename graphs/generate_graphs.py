@@ -200,6 +200,7 @@ def augment_time(field, model_params, dt_new):
 
     npoints = field[times_before[0]].shape[0]
 
+    timestep = 1
     times_scaled = np.array([t * timestep for t in times_before])
     times_scaled = times_scaled - times_scaled[0]
     period = times_scaled[-1]
@@ -248,7 +249,7 @@ def generate_graphs(model_name, model_params, input_dir, output_dir,
         return True
 
     failures = 0
-    max_failures = 100
+    max_failures = 1
     n_graph = 0
     while n_graph < n_graphs_per_model:
         print('Adding graph ' + str(n_graph))
@@ -265,21 +266,24 @@ def generate_graphs(model_name, model_params, input_dir, output_dir,
         try:
             start = time.time()
             raw_graph = RawGraph(p_array, model_params, debug)
-            area, _ = raw_graph.project(fields['area'])
+            for field in fields:
+                if 'area' in field:
+                    area,_ = raw_graph.project(fields[field])
+                    break
             for a in area:
                 if (np.min(a) < 0):
                     raise ValueError('Interpolated area is negative!')
-
+    
             raw_graph.set_node_types(fields['BifurcationId'])
             end = time.time()
             elapsed_time = end - start
             print('Graph generated in = {:0.2f} s'.format(elapsed_time))
 
             g_pressure, g_flowrate = io.gather_pressures_flowrates(fields)
-
+                
             times = [t for t in g_pressure]
             times.sort()
-
+                
             # if we consider simulation from the start we skip a few timesteps
             # because the first ones are noisy
             if mv == 0:
@@ -295,9 +299,10 @@ def generate_graphs(model_name, model_params, input_dir, output_dir,
             flowrate, g_flowrate = raw_graph.partition_and_stack_fields(g_flowrate)
 
             # we just check that there are no negative pressures after interpolation
-            for t in pressure:
-                if np.min(pressure[t]) < 0:
-                    raise ValueError("Min pressure is negative")
+            # for t in pressure:
+            #     if np.min(pressure[t]) < 0:
+            #         print(t)
+            #         raise ValueError("Min pressure is negative")
 
             end = time.time()
             elapsed_time = end - start
@@ -327,9 +332,10 @@ def generate_graphs(model_name, model_params, input_dir, output_dir,
             pressure = augment_time(pressure, model_params, dt_new)
             flowrate = augment_time(flowrate, model_params, dt_new)
 
-            for t in pressure:
-                if np.min(pressure[t]) < 0:
-                    raise ValueError("Min pressure is negative")
+            # for t in pressure:
+            #     if np.min(pressure[t]) < 0:
+            #         print(t)
+            #         raise ValueError("Min pressure is negative")
 
             print('Generating graphs')
             fixed_graph = create_fixed_graph(raw_graph, raw_graph.stack(area))
@@ -339,7 +345,6 @@ def generate_graphs(model_name, model_params, input_dir, output_dir,
             if save:
                 dgl.save_graphs(output_dir + model_name + '.' + str(n_graph) + '.grph', graphs)
             n_graph = n_graph + 1
-
         except Exception as e:
             print('Failed to generate: ' + str(e))
             failures = failures + 1
@@ -353,9 +358,9 @@ def generate_graphs(model_name, model_params, input_dir, output_dir,
 
 if __name__ == "__main__":
     data_location = io.data_location()
-    input_dir = data_location + 'vtps'
+    input_dir = data_location + 'vtps_1D'
     output_dir = data_location + 'graphs/'
-    params = json.load(open(input_dir + '/dataset_aortas.json'))
+    params = json.load(open(input_dir + '/dataset.json'))
 
     timesteps = json.load(open(input_dir + '/timesteps.json'))
     for model in params:
@@ -365,7 +370,7 @@ if __name__ == "__main__":
         params[model]['timestep'] = timesteps[tmodel]
 
     failed_models = []
-    n_graphs_per_model = 5
+    n_graphs_per_model = 1
     for model in params:
         print('Processing {}'.format(model))
         success = generate_graphs(model, params[model], input_dir, output_dir,

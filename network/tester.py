@@ -161,10 +161,10 @@ def evaluate_all_models(dataset, split_name, gnn_model, params):
                                     dataset, index_graph = i,
                                     split = split_name)
         print_rollout_errors(errors)
-        # plot_rollout(solutions,
-        #              params['normalization_coefficients']['features'],
-        #              graph, true_graph,
-        #              out_folder = 'results_' + split_name + '/' + model_name)
+        plot_rollout(solutions,
+                     params['normalization_coefficients']['features'],
+                     graph, true_graph,
+                     out_folder = 'results_' + split_name + '/' + model_name)
 
         tot_err_p_branch = tot_err_p_branch + np.sqrt(errors['p_branch'] / errors['norm_p'])
         tot_err_q_branch = tot_err_q_branch + np.sqrt(errors['q_branch'] / errors['norm_q'])
